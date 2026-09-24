@@ -1,0 +1,8 @@
+import { AppError } from '../../errors/AppError.js';
+import { getBankAccountModel } from './models/FinanceModels.js';
+export type BankAccountRecord = { id: string; companyId: string; branchId: string; name: string; bankName: string; iban: string; status: 'ACTIVE' | 'INACTIVE' };
+export async function listBankAccounts(companyId: string, branchId: string): Promise<BankAccountRecord[]> { const rows = await getBankAccountModel().find({ companyId, branchId }).sort({ name: 1 }).lean().exec(); return rows.map(({ _id, ...row }) => ({ id: String(_id), ...row })); }
+export async function createBankAccount(input: { companyId: string; branchId: string; name: string; bankName: string; iban: string }): Promise<BankAccountRecord> {
+  try { const row = await getBankAccountModel().create({ ...input, name: input.name.trim(), bankName: input.bankName.trim(), iban: input.iban.replace(/\s+/g, '').toUpperCase(), status: 'ACTIVE' }); return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, name: row.name, bankName: row.bankName, iban: row.iban, status: row.status }; }
+  catch (error) { if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: number }).code === 11000) throw new AppError({ code: 'CONFLICT', message: 'Duplicate bank account', friendlyMessage: 'Esta cuenta bancaria ya esta registrada en la sucursal.', statusCode: 409 }); throw error; }
+}

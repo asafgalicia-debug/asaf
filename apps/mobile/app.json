@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "ERP Universal Modular",
+    "slug": "erp-universal-modular",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}

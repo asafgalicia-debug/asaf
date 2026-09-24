@@ -1,0 +1,13 @@
+{
+  "name": "shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.ts",
+  "exports": {
+    "./constants": "./constants/index.ts",
+    "./types": "./types/index.ts",
+    "./utils": "./utils/index.ts",
+    "./schemas": "./schemas/index.ts"
+  }
+}

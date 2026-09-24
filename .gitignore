@@ -1,0 +1,44 @@
+# ============================================================
+# ERP Universal Modular — .gitignore
+# Nunca subir a Git: credenciales, secretos, dependencias,
+# artefactos de compilación, logs y archivos temporales.
+# ============================================================
+
+# Dependencias
+node_modules/
+
+# Variables de entorno (credenciales y secretos)
+.env
+.env.*
+!.env.example
+
+# Compilación / bundles
+dist/
+build/
+.expo/
+web-build/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+
+# Pruebas
+coverage/
+
+# Temporales y sistema
+*.tmp
+*.temp
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE / editores
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Credenciales y claves (seguridad)
+*.pem
+*.key
+credentials.json

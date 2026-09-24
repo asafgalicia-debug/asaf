@@ -1,0 +1,22 @@
+{
+  "name": "erp-universal-modular",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "backend",
+    "shared"
+  ],
+  "scripts": {
+    "setup": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')) console.warn('Falta .env. Copia la plantilla .env.example y completa los valores reales antes de arrancar el ERP.'); else console.log('Entorno listo para ERP Universal Modular.');\"",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:mobile": "npm --workspace apps/mobile run start",
+    "dev:api": "npm --workspace backend run dev",
+    "start:api": "npm --workspace backend run start",
+    "start:web": "npm --workspace apps/web run dev -- --host 0.0.0.0",
+    "build": "npm --workspace backend run build && npm --workspace apps/web run build",
+    "test": "npm --workspace backend run test",
+    "lint": "npm --workspace backend run lint && npm --workspace apps/web run lint",
+    "typecheck": "npm --workspace backend run typecheck && npm --workspace apps/web run typecheck && npm --workspace apps/mobile run typecheck"
+  }
+}
