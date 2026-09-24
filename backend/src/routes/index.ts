@@ -5,6 +5,7 @@ import { createAuthRoutes } from '../modules/auth/authRoutes.js';
 import { createAuditRoutes } from '../modules/auditoria/auditRoutes.js';
 import { createConfigRoutes } from '../modules/configuracion/configRoutes.js';
 import { createCompanyRoutes } from '../modules/empresas/companyRoutes.js';
+import { createBranchRoutes } from '../modules/empresas/branchRoutes.js';
 import { createDepartmentRoutes } from '../modules/empresas/departmentRoutes.js';
 import { createCustomerRoutes } from '../modules/clientes/customerRoutes.js';
 import { createAnalyticsRoutes } from '../modules/analytics/analyticsRoutes.js';
@@ -93,6 +94,7 @@ export function createAppRouter(): Router {
   router.use('/users', createUserRoutes());
   router.use('/roles', createRoleRoutes());
   router.use('/companies', createCompanyRoutes());
+  router.use('/branches', createBranchRoutes());
   router.use('/departments', createDepartmentRoutes());
   router.use('/customers', createCustomerRoutes());
   router.use('/crm/opportunities', createOpportunityRoutes());
