@@ -22,15 +22,15 @@ function getCompanyId(req: Request): string {
 export function createBranchRoutes(): Router {
   const router = Router();
 
-  router.get('/', authenticate, tenant, authorize('usuarios.ver'), (req, res, next) => {
+  router.get('/', authenticate, tenant, authorize('usuarios.ver'), async (req, res, next) => {
     try {
-      res.json({ ok: true, data: listBranches(getCompanyId(req)) });
+      res.json({ ok: true, data: await listBranches(getCompanyId(req)) });
     } catch (error) {
       next(error);
     }
   });
 
-  router.post('/', authenticate, tenant, authorize('usuarios.editar'), (req, res, next) => {
+  router.post('/', authenticate, tenant, authorize('usuarios.editar'), async (req, res, next) => {
     try {
       const { name, code, city } = req.body ?? {};
       if (typeof name !== 'string' || typeof code !== 'string' || typeof city !== 'string') {
@@ -41,7 +41,7 @@ export function createBranchRoutes(): Router {
           statusCode: 400
         });
       }
-      const branch = createBranch({ companyId: getCompanyId(req), name, code, city });
+      const branch = await createBranch({ companyId: getCompanyId(req), name, code, city });
       res.status(201).json({ ok: true, data: branch });
     } catch (error) {
       next(error);
