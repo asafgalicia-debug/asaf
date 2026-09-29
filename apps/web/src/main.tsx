@@ -23,6 +23,7 @@ const fontStacks: Record<Theme['font'], string> = {
   mono: '"Cascadia Code", "SFMono-Regular", Consolas, monospace'
 };
 const defaultTheme: Theme = { mode: 'dark', accent: '#70e5ff', font: 'modern' };
+const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/+$/, '');
 const moduleItems: Array<{ id: Page; label: string; icon: string; detail: string }> = [
   { id: 'dashboard', label: 'Centro de mando', icon: '◈', detail: 'Resumen de la operacion' },
   { id: 'sales', label: 'Ventas', icon: '↗', detail: 'Pedidos y clientes' },
@@ -194,8 +195,8 @@ function App() {
     const controller = new AbortController();
     const headers = { Authorization: 'Bearer ' + session.token };
     void Promise.all([
-      fetch('/api/v1/companies', { headers, signal: controller.signal }).then((response) => response.ok ? response.json() : null),
-      fetch('/api/v1/branches', { headers, signal: controller.signal }).then((response) => response.ok ? response.json() : null)
+      fetch(`${apiBaseUrl}/companies`, { headers, signal: controller.signal }).then((response) => response.ok ? response.json() : null),
+      fetch(`${apiBaseUrl}/branches`, { headers, signal: controller.signal }).then((response) => response.ok ? response.json() : null)
     ]).then(([companyResult, branchResult]) => {
       const company = companyResult?.data?.[0];
       const branch = Array.isArray(branchResult?.data) ? branchResult.data.find((item: { id?: string }) => item.id === session.user.branchId) : undefined;
@@ -209,7 +210,7 @@ function App() {
     setError('');
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/v1/auth/login', {
+      const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
