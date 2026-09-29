@@ -29,6 +29,10 @@ npm.cmd test
 
 ## Estructura
 
+Para generar el APK Android, ejecuta `npm.cmd run android:release` desde la
+raiz. Consulta [la guia de release Android](docs/android-release.md) para los
+requisitos, la ruta del APK y el alcance de la firma actual.
+
 - `backend/src/modules`: rutas, servicios y modelos por dominio.
 - `backend/src/middleware`, `config`, `security`, `audit`, `errors`: infraestructura compartida.
 - `apps/web` y `apps/mobile`: aplicaciones cliente; sus interfaces e integraciÃ³n final siguen pendientes de revisiÃ³n.
