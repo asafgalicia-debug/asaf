@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: nucleo-erp-web
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: apps/web/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
