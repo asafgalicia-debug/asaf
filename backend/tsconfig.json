@@ -11,12 +11,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "types": ["node"],
-    "baseUrl": ".",
-    "paths": {
-      "@shared/*": ["../shared/*"],
-      "@backend/*": ["./src/*"]
-    }
+    "types": ["node"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["dist", "node_modules"]
