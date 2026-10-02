@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { createStockRoutes } from '../modules/inventario/stockRoutes.js';
 import { loadModuleManifests } from '../core/moduleRegistry.js';
 
 import { createAuthRoutes } from '../modules/auth/authRoutes.js';
@@ -104,6 +105,7 @@ export function createAppRouter(): Router {
   router.use('/categories', createCategoryRoutes());
   router.use('/products', createProductRoutes());
   router.use('/warehouses', createWarehouseRoutes());
+  router.use('/stock', createStockRoutes());
   router.use('/transfers', createTransferRoutes());
   router.use('/employees', createEmployeeRoutes());
   router.use('/projects', createProjectRoutes());
