@@ -22,3 +22,17 @@ export async function createCustomer(input: PartnerInput): Promise<CustomerRecor
     throw error;
   }
 }
+export async function updateCustomer(id: string, input: PartnerInput): Promise<CustomerRecord> {
+  try {
+    const row = await getCustomerModel().findOneAndUpdate(
+      { _id: id, companyId: input.companyId, branchId: input.branchId },
+      { $set: { name: input.name.trim(), taxId: input.taxId.trim().toUpperCase(), email: input.email.trim().toLowerCase() } },
+      { new: true, runValidators: true }
+    ).exec();
+    if (!row) throw new AppError({ code: 'NOT_FOUND', message: 'Contact not found in tenant', friendlyMessage: 'El contacto no está disponible en esta sucursal.', statusCode: 404 });
+    return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, name: row.name, taxId: row.taxId, email: row.email, status: row.status };
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) throw new AppError({ code: 'CONFLICT', message: 'Duplicate contact tax id', friendlyMessage: 'Ya existe un contacto con ese identificador fiscal en la empresa.', statusCode: 409 });
+    throw error;
+  }
+}

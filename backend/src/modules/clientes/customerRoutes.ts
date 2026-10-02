@@ -6,7 +6,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
 import { logAuditEvent } from '../../audit/auditLogger.js';
-import { createCustomer, listCustomers } from './customerService.js';
+import { createCustomer, listCustomers, updateCustomer } from './customerService.js';
 
 const partnerSchema = z.object({ name: z.string().trim().min(2).max(120), taxId: z.string().trim().min(3).max(32), email: z.string().trim().email().max(254) }).strict();
 function tenantOf(req: Request): { companyId: string; branchId: string; userId: string } {
@@ -28,6 +28,15 @@ export function createCustomerRoutes(): Router {
       const created = await createCustomer({ ...parsed.data, companyId: scope.companyId, branchId: scope.branchId });
       await logAuditEvent({ userId: scope.userId, companyId: scope.companyId, branchId: scope.branchId, action: 'CREATE', module: 'clientes', entityId: created.id, details: {}, ipAddress: req.ip });
       res.status(201).json({ ok: true, data: created });
+    } catch (error) { next(error); }
+  });
+  router.patch('/:id', authenticate, tenant, authorize('usuarios.editar'), async (req, res, next) => {
+    try {
+      const scope = tenantOf(req); const parsed = partnerSchema.safeParse(req.body);
+      if (!parsed.success || !/^[a-f0-9]{24}$/i.test(req.params.id)) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid contact update', friendlyMessage: 'Revisa los datos del contacto.', statusCode: 400 });
+      const updated = await updateCustomer(req.params.id, { ...parsed.data, companyId: scope.companyId, branchId: scope.branchId });
+      await logAuditEvent({ userId: scope.userId, companyId: scope.companyId, branchId: scope.branchId, action: 'UPDATE', module: 'clientes', entityId: updated.id, details: {}, ipAddress: req.ip });
+      res.json({ ok: true, data: updated });
     } catch (error) { next(error); }
   });
   return router;
