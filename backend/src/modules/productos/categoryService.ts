@@ -22,3 +22,13 @@ export async function renameCategory(id: string, companyId: string, expectedName
   if (!row) throw new AppError({ code: 'CONFLICT', message: 'Catalog record unavailable or name changed', friendlyMessage: 'El registro cambió o no está disponible. Actualiza el catálogo.', statusCode: 409 });
   return { id: String(row._id), companyId: row.companyId, name: row.name, code: row.code, status: row.status };
 }
+
+export async function updateCategoryStatus(id: string, companyId: string, expectedStatus: 'ACTIVE' | 'INACTIVE', status: 'ACTIVE' | 'INACTIVE'): Promise<CategoryRecord> {
+  if (expectedStatus === status) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Unchanged catalog status', friendlyMessage: 'Selecciona un estado diferente del actual.', statusCode: 400 });
+  const row = await getCategoryModel().findOneAndUpdate(
+    { _id: id, companyId, status: expectedStatus },
+    { $set: { status } }, { new: true, runValidators: true }
+  ).exec();
+  if (!row) throw new AppError({ code: 'CONFLICT', message: 'Catalog state changed or unavailable', friendlyMessage: 'El estado cambió o el registro no está disponible. Actualiza el catálogo.', statusCode: 409 });
+  return { id: String(row._id), companyId: row.companyId, name: row.name, code: row.code, status: row.status };
+}
