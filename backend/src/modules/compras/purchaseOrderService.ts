@@ -1,3 +1,4 @@
+import { allowedTransactionTransition } from '../../core/transactionStatus.js';
 import { AppError } from '../../errors/AppError.js';
 import { getSupplierModel } from '../proveedores/models/Supplier.js';
 import { getProductModel } from '../productos/models/Product.js';
@@ -15,5 +16,14 @@ export async function createPurchaseOrder(input: { companyId: string; branchId: 
   if (!supplier || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Purchase references are invalid', friendlyMessage: 'El proveedor y producto deben existir, estar activos y pertenecer a tu empresa.', statusCode: 400 });
   const total = Math.round(input.unitCost * input.quantity * 100) / 100;
   const row = await getPurchaseOrderModel().create({ ...input, total, status: 'PENDIENTE' });
+  return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, supplierId: row.supplierId, productId: row.productId, quantity: row.quantity, unitCost: row.unitCost, total: row.total, status: row.status };
+}
+export async function updatePurchaseOrderStatus(id: string, companyId: string, branchId: string, expectedStatus: PurchaseOrderStatus, status: PurchaseOrderStatus): Promise<PurchaseOrderRecord> {
+  if (!allowedTransactionTransition('purchase-orders', expectedStatus, status)) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Unsupported status transition', friendlyMessage: 'Este cambio de estado no está permitido.', statusCode: 400 });
+  const row = await getPurchaseOrderModel().findOneAndUpdate(
+    { _id: id, companyId, branchId, status: expectedStatus },
+    { $set: { status } }, { new: true, runValidators: true }
+  ).exec();
+  if (!row) throw new AppError({ code: 'CONFLICT', message: 'Transaction unavailable or state changed', friendlyMessage: 'El registro cambió o no está disponible en esta sucursal. Actualiza el listado.', statusCode: 409 });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, supplierId: row.supplierId, productId: row.productId, quantity: row.quantity, unitCost: row.unitCost, total: row.total, status: row.status };
 }

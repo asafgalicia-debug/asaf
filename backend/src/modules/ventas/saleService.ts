@@ -1,3 +1,4 @@
+import { allowedTransactionTransition } from '../../core/transactionStatus.js';
 import { AppError } from '../../errors/AppError.js';
 import { getCustomerModel } from '../clientes/models/Customer.js';
 import { getProductModel } from '../productos/models/Product.js';
@@ -16,5 +17,14 @@ export async function createSale(input: { companyId: string; branchId: string; c
   const unitPrice = Number(product.price);
   const total = Math.round(unitPrice * input.quantity * 100) / 100;
   const row = await getSaleModel().create({ ...input, unitPrice, total, status: 'PENDIENTE' });
+  return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, customerId: row.customerId, productId: row.productId, quantity: row.quantity, unitPrice: row.unitPrice, total: row.total, status: row.status };
+}
+export async function updateSaleStatus(id: string, companyId: string, branchId: string, expectedStatus: SaleStatus, status: SaleStatus): Promise<SaleRecord> {
+  if (!allowedTransactionTransition('sales', expectedStatus, status)) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Unsupported status transition', friendlyMessage: 'Este cambio de estado no está permitido.', statusCode: 400 });
+  const row = await getSaleModel().findOneAndUpdate(
+    { _id: id, companyId, branchId, status: expectedStatus },
+    { $set: { status } }, { new: true, runValidators: true }
+  ).exec();
+  if (!row) throw new AppError({ code: 'CONFLICT', message: 'Transaction unavailable or state changed', friendlyMessage: 'El registro cambió o no está disponible en esta sucursal. Actualiza el listado.', statusCode: 409 });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, customerId: row.customerId, productId: row.productId, quantity: row.quantity, unitPrice: row.unitPrice, total: row.total, status: row.status };
 }
