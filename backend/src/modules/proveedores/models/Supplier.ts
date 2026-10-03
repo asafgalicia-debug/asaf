@@ -23,6 +23,8 @@ const schema = new Schema<SupplierDocument>({
 schema.index({ companyId: 1, taxId: 1 }, { unique: true });
 schema.index({ companyId: 1, branchId: 1, status: 1, name: 1 });
 
+schema.index({ companyId: 1, branchId: 1, _id: -1 });
+
 let model: Model<SupplierDocument> | undefined;
 export function getSupplierModel(): Model<SupplierDocument> {
   if (!model) model = mongoose.models.Supplier ?? mongoose.model<SupplierDocument>('Supplier', schema);

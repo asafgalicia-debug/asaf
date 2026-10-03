@@ -11,6 +11,8 @@ const schema = new Schema<ProductDocument>({
 schema.index({ companyId: 1, sku: 1 }, { unique: true });
 schema.index({ companyId: 1, categoryId: 1, status: 1 });
 schema.index({ companyId: 1, name: 1 });
+schema.index({ companyId: 1, _id: -1 });
+
 let model: Model<ProductDocument> | undefined;
 export function getProductModel(): Model<ProductDocument> {
   if (!model) model = mongoose.models.Product ?? mongoose.model<ProductDocument>('Product', schema);

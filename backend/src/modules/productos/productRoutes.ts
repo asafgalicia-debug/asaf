@@ -1,3 +1,4 @@
+import { parseCatalogQuery } from '../../core/catalogPagination.js';
 import type { Request } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -6,7 +7,7 @@ import { logAuditEvent } from '../../audit/auditLogger.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
-import { createProduct, listProducts, updateProduct } from './productService.js';
+import { createProduct, listProducts, pageProducts, updateProduct } from './productService.js';
 const productSchema = z.object({ categoryId: z.string().trim().min(1).max(100), name: z.string().trim().min(2).max(120), sku: z.string().trim().min(1).max(48), price: z.number().finite().min(0) }).strict();
 const productUpdateSchema = z.object({ categoryId: z.string().trim().regex(/^[a-f0-9]{24}$/i), name: z.string().trim().min(2).max(120), price: z.number().finite().min(0).refine(value => Number.isSafeInteger(Math.round(value * 100)) && value === Number(value.toFixed(2)), 'Maximum two decimals') }).strict();
 function scope(req: Request): { companyId: string; branchId: string; userId: string } {
@@ -17,6 +18,9 @@ function scope(req: Request): { companyId: string; branchId: string; userId: str
 export function createProductRoutes(): Router {
   const router = Router();
   router.get('/', authenticate, tenant, authorize('usuarios.ver'), async (req, res, next) => { try { const s = scope(req); res.json({ ok: true, data: await listProducts(s.companyId) }); } catch (error) { next(error); } });
+  router.get('/page', authenticate, tenant, authorize('usuarios.ver'), async (req, res, next) => {
+    try { const s = scope(req); const query = parseCatalogQuery(req.query); res.json({ ok: true, data: await pageProducts(s.companyId, query) }); } catch (error) { next(error); }
+  });
   router.post('/', authenticate, tenant, authorize('usuarios.editar'), async (req, res, next) => {
     try {
       const s = scope(req); const parsed = productSchema.safeParse(req.body);

@@ -24,6 +24,8 @@ schema.index({ companyId: 1, taxId: 1 }, { unique: true });
 schema.index({ companyId: 1, branchId: 1, status: 1, name: 1 });
 schema.index({ companyId: 1, branchId: 1, name: 1 });
 
+schema.index({ companyId: 1, branchId: 1, _id: -1 });
+
 let model: Model<CustomerDocument> | undefined;
 export function getCustomerModel(): Model<CustomerDocument> {
   if (!model) model = mongoose.models.Customer ?? mongoose.model<CustomerDocument>('Customer', schema);

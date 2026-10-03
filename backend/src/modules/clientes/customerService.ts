@@ -1,3 +1,4 @@
+import { catalogFilter, catalogSlice, type CatalogQuery } from '../../core/catalogPagination.js';
 import { AppError } from '../../errors/AppError.js';
 import { getCustomerModel } from './models/Customer.js';
 
@@ -35,4 +36,9 @@ export async function updateCustomer(id: string, input: PartnerInput): Promise<C
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) throw new AppError({ code: 'CONFLICT', message: 'Duplicate contact tax id', friendlyMessage: 'Ya existe un contacto con ese identificador fiscal en la empresa.', statusCode: 409 });
     throw error;
   }
+}
+
+export async function pageCustomers(companyId: string, branchId: string, query: CatalogQuery) {
+ const rows = await getCustomerModel().find(catalogFilter({ companyId, branchId }, query, ['name', 'taxId', 'email'])).sort({ _id: -1 }).limit(query.limit + 1).lean().exec();
+ return catalogSlice(rows, query.limit);
 }

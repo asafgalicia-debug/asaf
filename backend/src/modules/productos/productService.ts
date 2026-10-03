@@ -1,3 +1,4 @@
+import { catalogFilter, catalogSlice, type CatalogQuery } from '../../core/catalogPagination.js';
 import { AppError } from '../../errors/AppError.js';
 import { getCategoryModel } from './models/Category.js';
 import { getProductModel } from './models/Product.js';
@@ -29,4 +30,9 @@ export async function updateProduct(id: string, input: { companyId: string; cate
   ).exec();
   if (!row) throw new AppError({ code: 'NOT_FOUND', message: 'Product not found in company', friendlyMessage: 'El producto no está disponible en esta empresa.', statusCode: 404 });
   return { id: String(row._id), companyId: row.companyId, categoryId: row.categoryId, name: row.name, sku: row.sku, price: row.price, status: row.status };
+}
+
+export async function pageProducts(companyId: string, query: CatalogQuery) {
+ const rows = await getProductModel().find(catalogFilter({ companyId }, query, ['name', 'sku'])).sort({ _id: -1 }).limit(query.limit + 1).lean().exec();
+ return catalogSlice(rows, query.limit);
 }

@@ -1,3 +1,4 @@
+import { parseCatalogQuery } from '../../core/catalogPagination.js';
 import type { Request } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -6,7 +7,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
 import { logAuditEvent } from '../../audit/auditLogger.js';
-import { createCustomer, listCustomers, updateCustomer } from './customerService.js';
+import { createCustomer, listCustomers, pageCustomers, updateCustomer } from './customerService.js';
 
 const partnerSchema = z.object({ name: z.string().trim().min(2).max(120), taxId: z.string().trim().min(3).max(32), email: z.string().trim().email().max(254) }).strict();
 function tenantOf(req: Request): { companyId: string; branchId: string; userId: string } {
@@ -20,6 +21,9 @@ export function createCustomerRoutes(): Router {
   router.get('/', authenticate, tenant, authorize('usuarios.ver'), async (req, res, next) => {
     try { const scope = tenantOf(req); res.json({ ok: true, data: await listCustomers(scope.companyId, scope.branchId) }); }
     catch (error) { next(error); }
+  });
+  router.get('/page', authenticate, tenant, authorize('usuarios.ver'), async (req, res, next) => {
+    try { const s = tenantOf(req); const query = parseCatalogQuery(req.query); res.json({ ok: true, data: await pageCustomers(s.companyId, s.branchId, query) }); } catch (error) { next(error); }
   });
   router.post('/', authenticate, tenant, authorize('usuarios.editar'), async (req, res, next) => {
     try {
