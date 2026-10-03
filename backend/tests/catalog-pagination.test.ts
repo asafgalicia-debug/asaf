@@ -17,3 +17,9 @@ describe('catalog pagination', () => {
   expect(catalogSlice(rows,3).nextCursor).toBeNull(); expect(catalogSlice([],20)).toEqual({items:[],nextCursor:null});
  });
 });
+
+it('restricts bounded lookups to server scope and filters active selectors', () => {
+ const ids = ['a'.repeat(24), 'b'.repeat(24)];
+ expect(catalogFilter({companyId:'co',branchId:'br'},parseCatalogQuery({ids:ids.join(','),status:'ACTIVE'}),['name'])).toEqual({companyId:'co',branchId:'br',status:'ACTIVE',_id:{$in:ids}});
+ for (const query of [{ids:'bad'},{ids:Array(21).fill(ids[0]).join(',')},{ids:ids.join(','),limit:1},{ids:ids[0],cursor:ids[1]},{ids:ids[0],search:'x'},{status:'DELETED'}]) expect(()=>parseCatalogQuery(query)).toThrow();
+});

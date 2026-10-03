@@ -14,3 +14,16 @@ describe.each([{kind:'customers',run:()=>pageCustomers('co','br',{limit:2,search
   expect(state.find).toHaveBeenCalledWith(expect.objectContaining({...entry.scope,_id:{$lt:'a'.repeat(24)}})); expect(state.sort).toHaveBeenCalledWith({_id:-1}); expect(state.limit).toHaveBeenCalledWith(3);
  });
 });
+
+describe.each([
+ {kind:'customers', run:(ids:string)=>pageCustomers('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},
+ {kind:'suppliers', run:(ids:string)=>pageSuppliers('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},
+ {kind:'products', run:(ids:string)=>pageProducts('co',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co'}}
+])('$kind bounded lookup', entry => {
+ it('keeps tenant and active status while requesting only supplied identifiers', async () => {
+  const id='a'.repeat(24); state.exec.mockResolvedValue([{_id:id,name:'A'}]);
+  expect(await entry.run(id)).toEqual({items:[{id,name:'A'}],nextCursor:null});
+  expect(state.find).toHaveBeenCalledWith({...entry.scope,status:'ACTIVE',_id:{$in:[id]}});
+  expect(state.limit).toHaveBeenCalledWith(21);
+ });
+});
