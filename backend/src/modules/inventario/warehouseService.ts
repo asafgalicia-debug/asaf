@@ -14,3 +14,11 @@ export async function createWarehouse(input: { companyId: string; branchId: stri
     throw error;
   }
 }
+export async function renameWarehouse(id: string, companyId: string, branchId: string, expectedName: string, name: string): Promise<WarehouseRecord> {
+  const row = await getWarehouseModel().findOneAndUpdate(
+    { _id: id, companyId, branchId, name: expectedName },
+    { $set: { name: name.trim() } }, { new: true, runValidators: true }
+  ).exec();
+  if (!row) throw new AppError({ code: 'CONFLICT', message: 'Catalog record unavailable or name changed', friendlyMessage: 'El registro cambió o no está disponible. Actualiza el catálogo.', statusCode: 409 });
+  return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, name: row.name, code: row.code, status: row.status };
+}

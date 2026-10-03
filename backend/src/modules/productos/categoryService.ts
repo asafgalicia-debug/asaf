@@ -14,3 +14,11 @@ export async function createCategory(input: { companyId: string; name: string; c
     throw error;
   }
 }
+export async function renameCategory(id: string, companyId: string, expectedName: string, name: string): Promise<CategoryRecord> {
+  const row = await getCategoryModel().findOneAndUpdate(
+    { _id: id, companyId, name: expectedName },
+    { $set: { name: name.trim() } }, { new: true, runValidators: true }
+  ).exec();
+  if (!row) throw new AppError({ code: 'CONFLICT', message: 'Catalog record unavailable or name changed', friendlyMessage: 'El registro cambió o no está disponible. Actualiza el catálogo.', statusCode: 409 });
+  return { id: String(row._id), companyId: row.companyId, name: row.name, code: row.code, status: row.status };
+}
