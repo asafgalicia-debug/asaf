@@ -1,3 +1,5 @@
+import { commercialFilter, type CommercialQuery } from '../../core/commercialPagination.js';
+import { catalogSlice } from '../../core/catalogPagination.js';
 import { allowedTransactionTransition } from '../../core/transactionStatus.js';
 import { AppError } from '../../errors/AppError.js';
 import { getCustomerModel } from '../clientes/models/Customer.js';
@@ -28,3 +30,5 @@ export async function updateSaleStatus(id: string, companyId: string, branchId: 
   if (!row) throw new AppError({ code: 'CONFLICT', message: 'Transaction unavailable or state changed', friendlyMessage: 'El registro cambió o no está disponible en esta sucursal. Actualiza el listado.', statusCode: 409 });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, customerId: row.customerId, productId: row.productId, quantity: row.quantity, unitPrice: row.unitPrice, total: row.total, status: row.status };
 }
+
+export async function pageSales(companyId: string, branchId: string, query: CommercialQuery) { const rows = await getSaleModel().find(commercialFilter(companyId, branchId, query)).sort({ _id: -1 }).limit(query.limit + 1).lean().exec(); return catalogSlice(rows, query.limit); }

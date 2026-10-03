@@ -8,6 +8,8 @@ const schema = new Schema<SaleDocument>({
   status: { type: String, enum: ['PENDIENTE', 'PAGADA', 'CANCELADA'], default: 'PENDIENTE', required: true }
 }, { timestamps: true });
 schema.index({ companyId: 1, branchId: 1, createdAt: -1 });
+schema.index({ companyId: 1, branchId: 1, _id: -1 });
+schema.index({ companyId: 1, branchId: 1, status: 1, _id: -1 });
 let model: Model<SaleDocument> | undefined;
 export function getSaleModel(): Model<SaleDocument> {
   if (!model) model = mongoose.models.Sale ?? mongoose.model<SaleDocument>('Sale', schema);

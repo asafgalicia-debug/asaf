@@ -8,6 +8,8 @@ const schema = new Schema<PurchaseOrderDocument>({
   status: { type: String, enum: ['PENDIENTE', 'APROBADA', 'RECIBIDA', 'CANCELADA'], default: 'PENDIENTE', required: true }
 }, { timestamps: true });
 schema.index({ companyId: 1, branchId: 1, createdAt: -1 });
+schema.index({ companyId: 1, branchId: 1, _id: -1 });
+schema.index({ companyId: 1, branchId: 1, status: 1, _id: -1 });
 let model: Model<PurchaseOrderDocument> | undefined;
 export function getPurchaseOrderModel(): Model<PurchaseOrderDocument> {
   if (!model) model = mongoose.models.PurchaseOrder ?? mongoose.model<PurchaseOrderDocument>('PurchaseOrder', schema);
