@@ -37,3 +37,18 @@ export async function updateWarehouseStatus(id: string, companyId: string, branc
   if (!row) throw new AppError({ code: 'CONFLICT', message: 'Catalog state changed or unavailable', friendlyMessage: 'El estado cambió o el registro no está disponible. Actualiza el catálogo.', statusCode: 409 });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, name: row.name, code: row.code, status: row.status };
 }
+
+export async function updateWarehouseCode(id: string, companyId: string, branchId: string, expectedCode: string, code: string): Promise<WarehouseRecord> {
+  const normalized = code.trim().toUpperCase();
+  if (normalized === expectedCode) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Unchanged code', friendlyMessage: 'Escribe un código diferente del actual.', statusCode: 400 });
+  try {
+    const row = await getWarehouseModel().findOneAndUpdate(
+      { _id: id, companyId, branchId, code: expectedCode }, { $set: { code: normalized } }, { new: true, runValidators: true }
+    ).exec();
+    if (!row) throw new AppError({ code: 'CONFLICT', message: 'Code changed or unavailable', friendlyMessage: 'El código cambió o el registro no está disponible. Actualiza el catálogo.', statusCode: 409 });
+    return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, name: row.name, code: row.code, status: row.status };
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) throw new AppError({ code: 'CONFLICT', message: 'Duplicate code', friendlyMessage: 'Ya existe un registro con ese código. Usa otro código.', statusCode: 409 });
+    throw error;
+  }
+}

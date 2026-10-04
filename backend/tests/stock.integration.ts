@@ -1,3 +1,6 @@
+import { getCategoryModel } from '../src/modules/productos/models/Category.js';
+import { updateCategoryCode } from '../src/modules/productos/categoryService.js';
+import { updateWarehouseCode } from '../src/modules/inventario/warehouseService.js';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -35,7 +38,7 @@ describe('stock against a real local MongoDB replica set', () => {
     ownsDatabase = true;
     const hello = await db.admin().command({ hello: 1 });
     if (!hello.setName) throw new Error('A MongoDB replica set is required; standalone servers are not supported.');
-    await Promise.all([getWarehouseModel().init(), getProductModel().init(), getStockMovementModel().init(), getStockLockModel().init()]);
+    await Promise.all([getCategoryModel().init(), getWarehouseModel().init(), getProductModel().init(), getStockMovementModel().init(), getStockLockModel().init()]);
   });
   afterAll(async () => {
     try {
@@ -57,6 +60,21 @@ describe('stock against a real local MongoDB replica set', () => {
     const product = await getProductModel().create({ companyId, categoryId: 'test-category', name: 'Product', sku: 'PRODUCT', price: 1 });
     fixture = { companyId, branchId, warehouseId: String(source._id), destinationWarehouseId: String(destination._id), productId: String(product._id), userId: 'test-user' };
     await receiveStock(movement('opening', 10));
+  });
+  it('changes codes atomically without altering stock or allowing scoped duplicates', async () => {
+    const {companyId,branchId,warehouseId}=fixture;
+    await expect(updateWarehouseCode(warehouseId,companyId,branchId,'SOURCE','DESTINATION')).rejects.toMatchObject({statusCode:409});
+    const changed=await updateWarehouseCode(warehouseId,companyId,branchId,'SOURCE',' new-source ');
+    expect(changed.code).toBe('NEW-SOURCE'); expect(changed.id).toBe(warehouseId); expect(changed.name).toBe('Source'); expect(await quantityAt(warehouseId)).toBe(10);
+    await expect(updateWarehouseCode(warehouseId,companyId,branchId,'SOURCE','OTHER')).rejects.toMatchObject({statusCode:409});
+    await expect(updateWarehouseCode(warehouseId,companyId,'foreign','NEW-SOURCE','OTHER')).rejects.toMatchObject({statusCode:409});
+    const [category]=await getCategoryModel().create([{companyId,name:'Original category',code:'CAT-OLD'},{companyId,name:'Other category',code:'CAT-OTHER'}]);
+    const id=String(category._id);
+    await expect(updateCategoryCode(id,companyId,'CAT-OLD','CAT-OTHER')).rejects.toMatchObject({statusCode:409});
+    const results=await Promise.allSettled([updateCategoryCode(id,companyId,'CAT-OLD','CAT-NEW'),updateCategoryCode(id,companyId,'CAT-OLD','CAT-SECOND')]);
+    expect(results.filter(row=>row.status==='fulfilled')).toHaveLength(1);
+    expect(results.find(row=>row.status==='rejected')).toMatchObject({reason:{statusCode:409}});
+    expect((await getCategoryModel().findById(id).lean())?.name).toBe('Original category');
   });
   it('pages actual balances including transfers and searches names without leaking tenant names', async () => {
     await transferStock({ ...movement('page-transfer', 4), destinationWarehouseId: fixture.destinationWarehouseId });
