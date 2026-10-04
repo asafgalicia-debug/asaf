@@ -1,5 +1,6 @@
+import {z} from 'zod';
 import {previewReport} from './reportPreview.js';
-﻿import { Router, type Request } from 'express';
+import { Router, type Request } from 'express';
 
 import { logAuditEvent } from '../../audit/auditLogger.js';
 import { AppError } from '../../errors/AppError.js';
@@ -12,6 +13,7 @@ import type { ReportPeriod, ReportType } from './models/Report.js';
 const reportTypes: ReportType[] = ['sales', 'cash-flow', 'inventory', 'financial'];
 const reportPeriods: ReportPeriod[] = ['day', 'week', 'month', 'quarter', 'year'];
 
+const reportSchema=z.object({name:z.string().trim().min(1).max(120),type:z.enum(['sales','cash-flow','inventory','financial']),period:z.enum(['day','week','month','quarter','year']),filters:z.object({}).strict().optional()}).strict();
 function getTenantContext(req: Request): { companyId: string; branchId: string; userId: string } {
   const context = req.tenant;
   if (!context?.companyId || !context.branchId || !context.userId) {
@@ -37,12 +39,9 @@ export function createReportRoutes(): Router {
   router.post('/', authenticate, tenant, authorize('reportes.ver'), async (req, res, next) => {
     try {
       const context = getTenantContext(req);
-      const { name, type, period, filters } = req.body ?? {};
-      if (typeof name !== 'string' || !reportTypes.includes(type) || !reportPeriods.includes(period) ||
-          (filters !== undefined && (filters === null || typeof filters !== 'object' || Array.isArray(filters)))) {
-        res.status(400).json({ ok: false, error: { code: 'VALIDATION_ERROR', message: 'Datos de reporte invÃ¡lidos.' } });
-        return;
-      }
+      const parsed=reportSchema.safeParse(req.body);
+      if(!parsed.success)throw new AppError({code:'VALIDATION_ERROR',message:'Invalid report request',friendlyMessage:'Revisa nombre, tipo y periodo. No se admiten filtros adicionales.',statusCode:400});
+      const {name,type,period,filters}=parsed.data;
       const created = await createReport({ ...context, name, type, period, filters });
       await logAuditEvent({ ...context, action: 'CREATE', module: 'reportes', entityId: String(created.id), details: { type, period } });
       res.status(201).json({ ok: true, data: created });

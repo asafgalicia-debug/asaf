@@ -6,7 +6,7 @@ vi.mock('../src/modules/reportes/models/Report.js', () => ({ getReportModel: () 
   create: async (input: any) => { const row = { ...input, _id: `report-${state.reports.length + 1}`, toObject() { return { ...this }; } }; state.reports.push(row); return row; }
 }) }));
 vi.mock('../src/modules/ventas/models/Sale.js', () => ({ getSaleModel: () => ({ aggregate: () => ({ exec: async () => [{ total: 450, orders: 3, units: 5 }] }) }) }));
-vi.mock('../src/modules/finanzas/models/FinanceModels.js', () => ({ getIncomeModel: () => ({ aggregate: () => ({ exec: async () => [{ total: 800, entries: 2 }] }) }), getExpenseModel: () => ({ aggregate: () => ({ exec: async () => [{ total: 250, entries: 1 }] }) }) }));
+vi.mock('../src/modules/finanzas/models/FinanceModels.js', () => ({getCashMovementModel:()=>({aggregate:()=>({exec:async()=>[{_id:'INFLOW',total:800,entries:2},{_id:'OUTFLOW',total:250,entries:1}]})})}));
 vi.mock('../src/modules/productos/models/Product.js', () => ({ getProductModel: () => ({ countDocuments: () => ({ exec: async () => 7 }) }) }));
 vi.mock('../src/modules/inventario/models/Warehouse.js', () => ({ getWarehouseModel: () => ({ countDocuments: () => ({ exec: async () => 2 }) }) }));
 
@@ -25,5 +25,14 @@ describe('report domain', () => {
     expect((report.data as any).income).toBe(800);
     expect((report.data as any).expenses).toBe(250);
     expect((report.data as any).balance).toBe(550);
+  });
+  it('rejects ignored filters and annotates inventory as current catalog',async()=>{
+    await expect(createReport({companyId:'co',branchId:'br',userId:'u',name:'Filtered',type:'sales',period:'month',filters:{customerId:'x'}})).rejects.toMatchObject({statusCode:400});
+    const report=await createReport({companyId:'co',branchId:'br',userId:'u',name:'Inventory',type:'inventory',period:'month'});
+    expect(report.data).toMatchObject({basis:'currentCatalog',periodApplied:false,activeProducts:7,activeWarehouses:2});
+  });
+  it('financial snapshot uses cash movement source and UTC bounds',async()=>{
+    const report=await createReport({companyId:'co',branchId:'br',userId:'u',name:'Cash',type:'financial',period:'month'});
+    expect(report.data).toMatchObject({source:'cashMovements',timezone:'UTC',basis:'movementDate',balance:550});
   });
 });
