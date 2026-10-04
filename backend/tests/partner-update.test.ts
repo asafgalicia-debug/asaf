@@ -21,4 +21,10 @@ describe.each([['customer', updateCustomer], ['supplier', updateSupplier]] as co
     state.update.mockRejectedValue({ code: 11000 });
     await expect(update('id', input)).rejects.toMatchObject({ statusCode: 409 });
   });
+  it('atomically compares snapshot and reports stale records as conflict', async () => {
+    const expected={name:'Original',taxId:'OLD',email:'old@example.com'};
+    state.update.mockResolvedValue(null);
+    await expect(update('id',{...input,expected})).rejects.toMatchObject({statusCode:409});
+    expect(state.update.mock.calls[0][0]).toEqual({_id:'id',companyId:'company',branchId:'branch',...expected});
+  });
 });

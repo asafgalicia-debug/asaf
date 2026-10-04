@@ -19,15 +19,16 @@ export async function createProduct(input: { companyId: string; categoryId: stri
     throw error;
   }
 }
-export async function updateProduct(id: string, input: { companyId: string; categoryId: string; name: string; price: number }): Promise<ProductRecord> {
+export async function updateProduct(id: string, input: { companyId: string; categoryId: string; name: string; price: number; expected?: {name:string;categoryId:string;price:number;sku:string} }): Promise<ProductRecord> {
   const categoryId = input.categoryId.trim();
   const category = await getCategoryModel().findOne({ _id: categoryId, companyId: input.companyId, status: 'ACTIVE' }).lean().exec();
   if (!category) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid active category', friendlyMessage: 'Selecciona una categoría activa de esta empresa.', statusCode: 400 });
   const row = await getProductModel().findOneAndUpdate(
-    { _id: id, companyId: input.companyId },
+    { _id: id, companyId: input.companyId, ...(input.expected ? {name:input.expected.name,categoryId:input.expected.categoryId,price:input.expected.price,sku:input.expected.sku} : {}) },
     { $set: { name: input.name.trim(), categoryId, price: input.price } },
     { new: true, runValidators: true }
   ).exec();
+  if (!row && input.expected) throw new AppError({code:'CONFLICT',message:'Stale product snapshot',friendlyMessage:'El producto cambió o no está disponible. Actualiza el catálogo.',statusCode:409});
   if (!row) throw new AppError({ code: 'NOT_FOUND', message: 'Product not found in company', friendlyMessage: 'El producto no está disponible en esta empresa.', statusCode: 404 });
   return { id: String(row._id), companyId: row.companyId, categoryId: row.categoryId, name: row.name, sku: row.sku, price: row.price, status: row.status };
 }

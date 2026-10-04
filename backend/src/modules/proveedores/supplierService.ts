@@ -23,13 +23,14 @@ export async function createSupplier(input: PartnerInput): Promise<SupplierRecor
     throw error;
   }
 }
-export async function updateSupplier(id: string, input: PartnerInput): Promise<SupplierRecord> {
+export async function updateSupplier(id: string, input: PartnerInput & { expected?: {name:string;taxId:string;email:string} }): Promise<SupplierRecord> {
   try {
     const row = await getSupplierModel().findOneAndUpdate(
-      { _id: id, companyId: input.companyId, branchId: input.branchId },
+      { _id: id, companyId: input.companyId, branchId: input.branchId, ...(input.expected ? {name: input.expected.name, taxId: input.expected.taxId, email: input.expected.email} : {}) },
       { $set: { name: input.name.trim(), taxId: input.taxId.trim().toUpperCase(), email: input.email.trim().toLowerCase() } },
       { new: true, runValidators: true }
     ).exec();
+    if (!row && input.expected) throw new AppError({code:'CONFLICT',message:'Stale contact snapshot',friendlyMessage:'El contacto cambió o no está disponible. Actualiza el catálogo.',statusCode:409});
     if (!row) throw new AppError({ code: 'NOT_FOUND', message: 'Contact not found in tenant', friendlyMessage: 'El contacto no está disponible en esta sucursal.', statusCode: 404 });
     return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, name: row.name, taxId: row.taxId, email: row.email, status: row.status };
   } catch (error) {

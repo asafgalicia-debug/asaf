@@ -10,6 +10,7 @@ import { tenant } from '../../middleware/tenant.js';
 import { createSupplier, listSuppliers, pageSuppliers, updateSupplier } from './supplierService.js';
 
 const partnerSchema = z.object({ name: z.string().trim().min(2).max(120), taxId: z.string().trim().min(3).max(32), email: z.string().trim().email().max(254) }).strict();
+const partnerUpdateSchema = partnerSchema.extend({ expected: partnerSchema.optional() }).strict();
 function tenantOf(req: Request): { companyId: string; branchId: string; userId: string } {
   const value = req.tenant;
   if (!value?.companyId || !value.branchId || !value.userId) throw new AppError({ code: 'UNAUTHORIZED', message: 'Tenant context missing', friendlyMessage: 'La sesion no tiene empresa y sucursal activas.', statusCode: 401 });
@@ -36,7 +37,7 @@ export function createSupplierRoutes(): Router {
   });
   router.patch('/:id', authenticate, tenant, authorize('usuarios.editar'), async (req, res, next) => {
     try {
-      const scope = tenantOf(req); const parsed = partnerSchema.safeParse(req.body);
+      const scope = tenantOf(req); const parsed = partnerUpdateSchema.safeParse(req.body);
       if (!parsed.success || !/^[a-f0-9]{24}$/i.test(req.params.id)) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid contact update', friendlyMessage: 'Revisa los datos del contacto.', statusCode: 400 });
       const updated = await updateSupplier(req.params.id, { ...parsed.data, companyId: scope.companyId, branchId: scope.branchId });
       await logAuditEvent({ userId: scope.userId, companyId: scope.companyId, branchId: scope.branchId, action: 'UPDATE', module: 'proveedores', entityId: updated.id, details: {}, ipAddress: req.ip });

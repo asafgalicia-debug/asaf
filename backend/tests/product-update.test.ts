@@ -21,4 +21,11 @@ describe('product editing', () => {
   state.category.mockResolvedValue({ _id: 'cat' }); state.update.mockResolvedValue(null);
   await expect(updateProduct('foreign', input)).rejects.toMatchObject({ statusCode: 404 });
  });
+ it('compares original fields atomically without changing SKU',async()=>{
+  state.category.mockResolvedValue({_id:'cat'});state.update.mockResolvedValue(null);
+  const expected={name:'Original',categoryId:'oldcat',price:5,sku:'ORIGINAL'};
+  await expect(updateProduct('id',{...input,expected})).rejects.toMatchObject({statusCode:409});
+  expect(state.update.mock.calls[0][0]).toEqual({_id:'id',companyId:'co',...expected});
+  expect(state.update.mock.calls[0][1].$set).not.toHaveProperty('sku');
+ });
 });
