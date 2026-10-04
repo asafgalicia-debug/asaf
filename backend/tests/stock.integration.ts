@@ -1,0 +1,133 @@
+import { randomUUID } from 'node:crypto';
+import mongoose from 'mongoose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { getWarehouseModel } from '../src/modules/inventario/models/Warehouse.js';
+import { getProductModel } from '../src/modules/productos/models/Product.js';
+import { getStockMovementModel } from '../src/modules/inventario/models/StockMovement.js';
+import { getStockLockModel } from '../src/modules/inventario/models/StockLock.js';
+import { issueStock, listStock, pageStock, receiveStock, transferStock } from '../src/modules/inventario/stockService.js';
+import { listStockHistory } from '../src/modules/inventario/stockHistoryService.js';
+
+// Deliberately do not load .env. Require an explicit local test replica set;
+// forbid remote hosts, credentials and database names supplied by callers.
+const uri = process.env.STOCK_TEST_MONGODB_URI;
+const databaseName = `codex_stock_test_${randomUUID().replaceAll('-', '')}`;
+let ownsDatabase = false;
+let fixture: { companyId: string; branchId: string; warehouseId: string; destinationWarehouseId: string; productId: string; userId: string };
+const movement = (reference: string, quantity: number) => ({
+  companyId: fixture.companyId, branchId: fixture.branchId,
+  warehouseId: fixture.warehouseId, productId: fixture.productId,
+  userId: fixture.userId, reference, quantity
+});
+async function quantityAt(warehouseId: string) {
+  const rows = await listStock(fixture.companyId, fixture.branchId);
+  return rows.find((row) => row.warehouseId === warehouseId && row.productId === fixture.productId)?.quantity ?? 0;
+}
+
+describe('stock against a real local MongoDB replica set', () => {
+  beforeAll(async () => {
+    if (!uri || !/^mongodb:\/\/(?:127\.0\.0\.1|localhost):\d+\/?(?:\?[^\s]*)?$/.test(uri)) {
+      throw new Error('Set STOCK_TEST_MONGODB_URI to a dedicated local replica set, for example mongodb://127.0.0.1:27017/?replicaSet=rs0. Remote hosts and database names are not allowed.');
+    }
+    await mongoose.connect(uri, { dbName: databaseName, serverSelectionTimeoutMS: 5000, autoIndex: true });
+    const db = mongoose.connection.db;
+    if (!db || db.databaseName !== databaseName) throw new Error('Unexpected test database; refusing writes.');
+    ownsDatabase = true;
+    const hello = await db.admin().command({ hello: 1 });
+    if (!hello.setName) throw new Error('A MongoDB replica set is required; standalone servers are not supported.');
+    await Promise.all([getWarehouseModel().init(), getProductModel().init(), getStockMovementModel().init(), getStockLockModel().init()]);
+  });
+  afterAll(async () => {
+    try {
+      const db = mongoose.connection.db;
+      // Only delete this run's generated test database, never a caller's target.
+      if (ownsDatabase && db?.databaseName === databaseName && /^codex_stock_test_[a-f0-9]{32}$/.test(databaseName)) {
+        await db.dropDatabase();
+      }
+    } finally { await mongoose.disconnect(); }
+  });
+  beforeEach(async () => {
+    const suffix = randomUUID();
+    const companyId = `test-company-${suffix}`;
+    const branchId = `test-branch-${suffix}`;
+    const [source, destination] = await getWarehouseModel().create([
+      { companyId, branchId, name: 'Source', code: 'SOURCE' },
+      { companyId, branchId, name: 'Destination', code: 'DESTINATION' }
+    ]);
+    const product = await getProductModel().create({ companyId, categoryId: 'test-category', name: 'Product', sku: 'PRODUCT', price: 1 });
+    fixture = { companyId, branchId, warehouseId: String(source._id), destinationWarehouseId: String(destination._id), productId: String(product._id), userId: 'test-user' };
+    await receiveStock(movement('opening', 10));
+  });
+  it('pages actual balances including transfers and searches names without leaking tenant names', async () => {
+    await transferStock({ ...movement('page-transfer', 4), destinationWarehouseId: fixture.destinationWarehouseId });
+    const all = await pageStock(fixture.companyId, fixture.branchId, { search: '', limit: 20 });
+    expect(all.items).toHaveLength(2); expect(all.items.map(row => row.quantity).sort()).toEqual([4, 6]);
+    expect(all.items.every(row => row.productName === 'Product')).toBe(true);
+    const first = await pageStock(fixture.companyId, fixture.branchId, { search: '', limit: 1 });
+    expect(first.nextCursor).toBeTruthy();
+    const second = await pageStock(fixture.companyId, fixture.branchId, { search: '', limit: 1, cursor: first.nextCursor! });
+    expect([...first.items, ...second.items]).toEqual(all.items); expect(second.nextCursor).toBeNull();
+    const destination = await pageStock(fixture.companyId, fixture.branchId, { search: 'Destination', limit: 20 });
+    expect(destination.items).toHaveLength(1); expect(destination.items[0].quantity).toBe(4);
+    expect((await pageStock(fixture.companyId, fixture.branchId, { search: '.*', limit: 20 })).items).toEqual([]);
+    expect((await pageStock('foreign-company', fixture.branchId, { search: '', limit: 20 })).items).toEqual([]);
+    expect((await pageStock(fixture.companyId, 'foreign-branch', { search: '', limit: 20 })).items).toEqual([]);
+  });
+  it('allows only one of two simultaneous withdrawals exceeding the balance', async () => {
+    const results = await Promise.allSettled([issueStock(movement('issue-a', 7)), issueStock(movement('issue-b', 7))]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({ reason: { statusCode: 409 } });
+    expect(await quantityAt(fixture.warehouseId)).toBe(3);
+    expect(await getStockMovementModel().countDocuments({ companyId: fixture.companyId })).toBe(2);
+  });
+  it('enforces duplicate references with the real unique index', async () => {
+    const results = await Promise.allSettled([receiveStock(movement('same-reference', 2)), receiveStock(movement('same-reference', 2))]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((result) => result.status === 'rejected')).toMatchObject({ reason: { statusCode: 409 } });
+    expect(await quantityAt(fixture.warehouseId)).toBe(12);
+  });
+  it('credits the destination and makes the transferred stock withdrawable', async () => {
+    await transferStock({ ...movement('transfer', 4), destinationWarehouseId: fixture.destinationWarehouseId });
+    expect(await quantityAt(fixture.warehouseId)).toBe(6);
+    expect(await quantityAt(fixture.destinationWarehouseId)).toBe(4);
+    await issueStock({ ...movement('destination-issue', 3), warehouseId: fixture.destinationWarehouseId });
+    expect(await quantityAt(fixture.destinationWarehouseId)).toBe(1);
+    await expect(transferStock({ ...movement('transfer', 4), destinationWarehouseId: fixture.destinationWarehouseId })).rejects.toMatchObject({ statusCode: 409 });
+    expect(await quantityAt(fixture.warehouseId)).toBe(6);
+    expect(await quantityAt(fixture.destinationWarehouseId)).toBe(1);
+  });
+  it('serializes a transfer competing with a withdrawal', async () => {
+    const results = await Promise.allSettled([
+      transferStock({ ...movement('competing-transfer', 7), destinationWarehouseId: fixture.destinationWarehouseId }),
+      issueStock(movement('competing-issue', 7))
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(await quantityAt(fixture.warehouseId)).toBe(3);
+    expect(await quantityAt(fixture.destinationWarehouseId)).toBe(results[0].status === 'fulfilled' ? 7 : 0);
+  });
+  it('rolls back control updates when a duplicate write fails', async () => {
+    const lockKey = JSON.stringify([fixture.companyId, fixture.branchId, fixture.warehouseId, fixture.productId]);
+    const before = await getStockLockModel().findById(lockKey).lean();
+    await expect(receiveStock(movement('opening', 1))).rejects.toMatchObject({ statusCode: 409 });
+    const after = await getStockLockModel().findById(lockKey).lean();
+    expect(after?.version).toBe(before?.version);
+    expect(await quantityAt(fixture.warehouseId)).toBe(10);
+  });
+  it('rejects a destination belonging to another branch', async () => {
+    const foreign = await getWarehouseModel().create({ companyId: fixture.companyId, branchId: 'other-branch', name: 'Other branch', code: 'FOREIGN' });
+    await expect(transferStock({ ...movement('foreign-transfer', 2), destinationWarehouseId: String(foreign._id) })).rejects.toMatchObject({ statusCode: 400 });
+    expect(await quantityAt(fixture.warehouseId)).toBe(10);
+    expect(await getStockMovementModel().countDocuments({ reference: 'foreign-transfer', companyId: fixture.companyId })).toBe(0);
+  });
+  it('paginates without repeating rows and scopes exact reference searches', async () => {
+    await receiveStock(movement('extra', 1));
+    const first = await listStockHistory(fixture.companyId, fixture.branchId, { limit: 1 });
+    expect(first.nextCursor).not.toBeNull();
+    const second = await listStockHistory(fixture.companyId, fixture.branchId, { limit: 1, cursor: first.nextCursor! });
+    expect(second.items).toHaveLength(1);
+    expect(second.items[0].id).not.toBe(first.items[0].id);
+    expect(second.nextCursor).toBeNull();
+    expect((await listStockHistory(fixture.companyId, 'other-branch', { reference: 'opening' })).items).toEqual([]);
+    expect((await listStockHistory(fixture.companyId, fixture.branchId, { reference: 'opening' })).items).toHaveLength(1);
+  });
+});

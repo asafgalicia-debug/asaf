@@ -4,12 +4,20 @@ import { AppError } from '../../errors/AppError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenant } from '../../middleware/tenant.js';
 import { authorize } from '../../middleware/authorize.js';
-import { listStock, receiveStock, issueStock, transferStock } from './stockService.js';
+import { listStock, pageStock, receiveStock, issueStock, transferStock } from './stockService.js';
+import { parseStockPageQuery } from './stockPagination.js';
 import { listStockHistory } from './stockHistoryService.js';
 const schema = z.object({ warehouseId: z.string().regex(/^[a-f\d]{24}$/i), productId: z.string().regex(/^[a-f\d]{24}$/i), quantity: z.number().finite().min(0.000001), reference: z.string().trim().min(1).max(100) }).strict();
 export function createStockRoutes() {
   const router = Router();
   router.use(authenticate, tenant);
+  router.get('/page', authorize('usuarios.ver'), async (req, res, next) => {
+    try {
+      const { companyId, branchId } = req.tenant!;
+      if (!companyId || !branchId) throw new AppError({ code: 'UNAUTHORIZED', message: 'Missing tenant', friendlyMessage: 'La sesión requiere empresa y sucursal.', statusCode: 401 });
+      res.json({ ok: true, data: await pageStock(companyId, branchId, parseStockPageQuery(req.query)) });
+    } catch (error) { next(error); }
+  });
   router.get('/movements', authorize('usuarios.ver'), async (req, res, next) => {
     try {
       const { companyId, branchId } = req.tenant!;

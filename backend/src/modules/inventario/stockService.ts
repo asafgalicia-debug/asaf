@@ -4,6 +4,7 @@ import { getStockLockModel } from './models/StockLock.js';
 import { getProductModel } from '../productos/models/Product.js';
 import { getWarehouseModel } from './models/Warehouse.js';
 import { getStockMovementModel } from './models/StockMovement.js';
+import { stockSearchLiteral, type StockPageQuery } from './stockPagination.js';
 
 type Receipt = { companyId: string; branchId: string; warehouseId: string; productId: string; quantity: number; reference: string; userId: string };
 // A transfer is one immutable document with two balance effects. This preserves
@@ -81,4 +82,26 @@ export async function listStock(companyId: string, branchId: string) {
     { $project: { _id: 0, warehouseId: '$_id.warehouseId', productId: '$_id.productId', quantity: 1 } },
     { $sort: { warehouseId: 1, productId: 1 } }
   ]).exec();
+}
+type StockPageRow = { warehouseId: string; productId: string; quantity: number; productName?: string; productSku?: string; warehouseName?: string; warehouseCode?: string };
+export async function pageStock(companyId: string, branchId: string, query: StockPageQuery) {
+  const pipeline: PipelineStage[] = [
+    { $match: { companyId, branchId } }, ...balanceEffects(),
+    { $group: { _id: { warehouseId: '$effects.warehouseId', productId: '$productId' }, quantity: { $sum: '$effects.quantity' } } },
+    { $project: { _id: 0, warehouseId: '$_id.warehouseId', productId: '$_id.productId', quantity: 1 } }
+  ];
+  if (query.cursor) {
+    const [warehouseId, productId] = query.cursor.split(':');
+    pipeline.push({ $match: { $or: [{ warehouseId: { $gt: warehouseId } }, { warehouseId, productId: { $gt: productId } }] } });
+  }
+  pipeline.push(
+    { $lookup: { from: getProductModel().collection.name, let: { id: { $convert: { input: '$productId', to: 'objectId', onError: null, onNull: null } } }, pipeline: [{ $match: { companyId, $expr: { $eq: ['$_id', '$$id'] } } }, { $project: { name: 1, sku: 1 } }], as: 'product' } },
+    { $lookup: { from: getWarehouseModel().collection.name, let: { id: { $convert: { input: '$warehouseId', to: 'objectId', onError: null, onNull: null } } }, pipeline: [{ $match: { companyId, branchId, $expr: { $eq: ['$_id', '$$id'] } } }, { $project: { name: 1, code: 1 } }], as: 'warehouse' } },
+    { $set: { productName: { $arrayElemAt: ['$product.name', 0] }, productSku: { $arrayElemAt: ['$product.sku', 0] }, warehouseName: { $arrayElemAt: ['$warehouse.name', 0] }, warehouseCode: { $arrayElemAt: ['$warehouse.code', 0] } } }
+  );
+  if (query.search) pipeline.push({ $match: { $or: ['productId', 'warehouseId', 'productName', 'productSku', 'warehouseName', 'warehouseCode'].map(field => ({ [field]: { $regex: stockSearchLiteral(query.search), $options: 'i' } })) } });
+  pipeline.push({ $sort: { warehouseId: 1, productId: 1 } }, { $limit: query.limit + 1 }, { $project: { product: 0, warehouse: 0 } });
+  const rows = await getStockMovementModel().aggregate<StockPageRow>(pipeline).exec();
+  const items = rows.slice(0, query.limit), last = items[items.length - 1];
+  return { items, nextCursor: rows.length > query.limit && last ? `${last.warehouseId}:${last.productId}` : null };
 }
