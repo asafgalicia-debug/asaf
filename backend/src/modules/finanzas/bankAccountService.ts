@@ -1,3 +1,4 @@
+import { catalogFilter, catalogSlice, type CatalogQuery } from '../../core/catalogPagination.js';
 import { AppError } from '../../errors/AppError.js';
 import { getBankAccountModel } from './models/FinanceModels.js';
 export type BankAccountRecord = { id: string; companyId: string; branchId: string; name: string; bankName: string; iban: string; status: 'ACTIVE' | 'INACTIVE' };
@@ -5,4 +6,9 @@ export async function listBankAccounts(companyId: string, branchId: string): Pro
 export async function createBankAccount(input: { companyId: string; branchId: string; name: string; bankName: string; iban: string }): Promise<BankAccountRecord> {
   try { const row = await getBankAccountModel().create({ ...input, name: input.name.trim(), bankName: input.bankName.trim(), iban: input.iban.replace(/\s+/g, '').toUpperCase(), status: 'ACTIVE' }); return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, name: row.name, bankName: row.bankName, iban: row.iban, status: row.status }; }
   catch (error) { if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: number }).code === 11000) throw new AppError({ code: 'CONFLICT', message: 'Duplicate bank account', friendlyMessage: 'Esta cuenta bancaria ya esta registrada en la sucursal.', statusCode: 409 }); throw error; }
+}
+export async function pageBankAccounts(companyId:string,branchId:string,query:CatalogQuery) {
+ const filter=catalogFilter({companyId,branchId},query,['name','bankName','iban']);
+ 
+ const rows=await getBankAccountModel().find(filter).sort({_id:-1}).limit(query.limit+1).lean().exec();return catalogSlice(rows,query.limit);
 }

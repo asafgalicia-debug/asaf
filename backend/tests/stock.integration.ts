@@ -1,3 +1,6 @@
+import {getBankAccountModel,getCashMovementModel} from '../src/modules/finanzas/models/FinanceModels.js';
+import {pageBankAccounts,createBankAccount} from '../src/modules/finanzas/bankAccountService.js';
+import {pageCashMovements,createCashMovement} from '../src/modules/finanzas/cashMovementService.js';
 import { getCategoryModel } from '../src/modules/productos/models/Category.js';
 import { updateCategoryCode } from '../src/modules/productos/categoryService.js';
 import { updateWarehouseCode } from '../src/modules/inventario/warehouseService.js';
@@ -38,7 +41,7 @@ describe('stock against a real local MongoDB replica set', () => {
     ownsDatabase = true;
     const hello = await db.admin().command({ hello: 1 });
     if (!hello.setName) throw new Error('A MongoDB replica set is required; standalone servers are not supported.');
-    await Promise.all([getCategoryModel().init(), getWarehouseModel().init(), getProductModel().init(), getStockMovementModel().init(), getStockLockModel().init()]);
+    await Promise.all([getBankAccountModel().init(),getCashMovementModel().init(),getCategoryModel().init(), getWarehouseModel().init(), getProductModel().init(), getStockMovementModel().init(), getStockLockModel().init()]);
   });
   afterAll(async () => {
     try {
@@ -60,6 +63,18 @@ describe('stock against a real local MongoDB replica set', () => {
     const product = await getProductModel().create({ companyId, categoryId: 'test-category', name: 'Product', sku: 'PRODUCT', price: 1 });
     fixture = { companyId, branchId, warehouseId: String(source._id), destinationWarehouseId: String(destination._id), productId: String(product._id), userId: 'test-user' };
     await receiveStock(movement('opening', 10));
+  });
+  it('pages real financial records without leaking other branches or regex search',async()=>{
+    const {companyId,branchId}=fixture;
+    const account=await createBankAccount({companyId,branchId,name:'Operating A+B',bankName:'Test bank',iban:'LOCAL-001'});
+    await createBankAccount({companyId,branchId:'foreign',name:'Foreign',bankName:'Test bank',iban:'LOCAL-002'});
+    expect((await pageBankAccounts(companyId,branchId,{search:'A+B',limit:20})).items.map(row=>row.id)).toEqual([account.id]);
+    expect((await pageBankAccounts(companyId,branchId,{search:'.*',limit:20})).items).toHaveLength(0);
+    for(const type of ['INFLOW','OUTFLOW'] as const) await createCashMovement({companyId,branchId,accountId:account.id,concept:'Local cash',amount:1,type,date:'2026-10-04'});
+    await getCashMovementModel().create({companyId,branchId:'foreign',accountId:account.id,concept:'Foreign cash',amount:9,type:'INFLOW',date:'2026-10-04'});
+    const first=await pageCashMovements(companyId,branchId,{search:'',limit:1});expect(first.items).toHaveLength(1);expect(first.nextCursor).toBeTruthy();
+    const second=await pageCashMovements(companyId,branchId,{search:'',limit:1,cursor:first.nextCursor!});expect(second.items).toHaveLength(1);expect(second.nextCursor).toBeNull();expect(second.items[0].id).not.toBe(first.items[0].id);
+    expect((await pageCashMovements(companyId,branchId,{search:'',limit:20,type:'OUTFLOW',accountId:account.id})).items).toHaveLength(1);
   });
   it('changes codes atomically without altering stock or allowing scoped duplicates', async () => {
     const {companyId,branchId,warehouseId}=fixture;

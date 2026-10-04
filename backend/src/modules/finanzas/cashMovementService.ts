@@ -1,3 +1,5 @@
+import type { CashQuery } from './cashPagination.js';
+import { catalogFilter, catalogSlice, type CatalogQuery } from '../../core/catalogPagination.js';
 import { AppError } from '../../errors/AppError.js';
 import { getBankAccountModel, getCashMovementModel } from './models/FinanceModels.js';
 export type CashMovementType = 'INFLOW' | 'OUTFLOW';
@@ -8,4 +10,9 @@ export async function createCashMovement(input: { companyId: string; branchId: s
   if (!account) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Cash account not found', friendlyMessage: 'La cuenta debe estar activa y pertenecer a tu empresa y sucursal.', statusCode: 400 });
   const row = await getCashMovementModel().create({ ...input, concept: input.concept.trim(), amount: Math.round(input.amount * 100) / 100 });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, accountId: row.accountId, concept: row.concept, type: row.type as CashMovementType, amount: row.amount, date: row.date ?? input.date };
+}
+export async function pageCashMovements(companyId:string,branchId:string,query:CashQuery) {
+ const filter=catalogFilter({companyId,branchId},query,['concept','date']);
+ if(query.type)filter.type=query.type; if(query.accountId)filter.accountId=query.accountId;
+ const rows=await getCashMovementModel().find(filter).sort({_id:-1}).limit(query.limit+1).lean().exec();return catalogSlice(rows,query.limit);
 }
