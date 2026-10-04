@@ -1,3 +1,4 @@
+import {createSettlementRoutes} from '../modules/ventas/commercialSettlement.js';
 import { Router } from 'express';
 import { createStockRoutes } from '../modules/inventario/stockRoutes.js';
 import { loadModuleManifests } from '../core/moduleRegistry.js';
@@ -144,6 +145,7 @@ export function createAppRouter(): Router {
   router.use('/contract-management', createContractManagementRoutes());
   router.use('/budget-planning', createBudgetPlanningRoutes());
   router.use('/config', createConfigRoutes());
+  router.use('/commercial-settlements',createSettlementRoutes());
   router.use('/reports', createReportRoutes());
   router.use('/integrations', createIntegrationRoutes());
   router.use('/ai', createAIRoutes());

@@ -1,3 +1,6 @@
+import {settleCommercial,getSettlementModel} from '../src/modules/ventas/commercialSettlement.js';
+import {getSaleModel} from '../src/modules/ventas/models/Sale.js';
+import {getPurchaseOrderModel} from '../src/modules/compras/models/PurchaseOrder.js';
 import {recordCommercialStock} from '../src/modules/inventario/stockService.js';
 import {getBankAccountModel,getCashMovementModel} from '../src/modules/finanzas/models/FinanceModels.js';
 import {pageBankAccounts,createBankAccount} from '../src/modules/finanzas/bankAccountService.js';
@@ -188,5 +191,35 @@ describe('stock against a real local MongoDB replica set', () => {
     }finally{await session.endSession();}
     expect(await quantityAt(fixture.warehouseId)).toBe(7);
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'commercial-commit'})).toBe(1);
+  });
+  it('settles sale once across inventory, cash and status; repeat returns same receipt',async()=>{
+    const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'BANK',status:'ACTIVE'});
+    const sale=await getSaleModel().create({companyId:fixture.companyId,branchId:fixture.branchId,customerId:'customer',productId:fixture.productId,quantity:3,unitPrice:2,total:6,status:'PENDIENTE'});
+    const input={kind:'sales',sourceId:String(sale._id),warehouseId:fixture.warehouseId,accountId:String(account._id),date:'2026-10-04'};
+    const receipt=await settleCommercial(fixture,input);const retry=await settleCommercial(fixture,input);
+    expect(retry.id).toBe(receipt.id);expect(await quantityAt(fixture.warehouseId)).toBe(7);
+    expect((await getSaleModel().findById(sale._id))?.status).toBe('PAGADA');
+    expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'SALE:'+sale._id})).toBe(1);
+    await expect(settleCommercial(fixture,{...input,date:'2026-10-05'})).rejects.toMatchObject({statusCode:409});
+  });
+  it('rolls back commercial status and cash when stock is insufficient or account is foreign',async()=>{
+    const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'BANK',status:'ACTIVE'});
+    const sale=await getSaleModel().create({companyId:fixture.companyId,branchId:fixture.branchId,customerId:'customer',productId:fixture.productId,quantity:11,unitPrice:2,total:22,status:'PENDIENTE'});
+    const input={kind:'sales',sourceId:String(sale._id),warehouseId:fixture.warehouseId,accountId:String(account._id),date:'2026-10-04'};
+    await expect(settleCommercial(fixture,input)).rejects.toMatchObject({statusCode:409});
+    await expect(settleCommercial(fixture,{...input,accountId:new mongoose.Types.ObjectId().toString()})).rejects.toMatchObject({statusCode:400});
+    expect((await getSaleModel().findById(sale._id))?.status).toBe('PENDIENTE');expect(await quantityAt(fixture.warehouseId)).toBe(10);
+    expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId})).toBe(0);expect(await getSettlementModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+  });
+  it('concurrent purchase settlement receives stock and pays exactly once',async()=>{
+    const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'BANK',status:'ACTIVE'});
+    const order=await getPurchaseOrderModel().create({companyId:fixture.companyId,branchId:fixture.branchId,supplierId:'supplier',productId:fixture.productId,quantity:4,unitCost:2,total:8,status:'APROBADA'});
+    const input={kind:'purchase-orders',sourceId:String(order._id),warehouseId:fixture.warehouseId,accountId:String(account._id),date:'2026-10-04'};
+    const results=await Promise.allSettled([settleCommercial(fixture,input),settleCommercial(fixture,input)]);
+    expect(results.some(r=>r.status==='fulfilled')).toBe(true);expect(await quantityAt(fixture.warehouseId)).toBe(14);
+    expect((await getPurchaseOrderModel().findById(order._id))?.status).toBe('RECIBIDA');
+    expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,type:'OUTFLOW',amount:8})).toBe(1);
+    expect(await getSettlementModel().countDocuments({companyId:fixture.companyId,sourceId:String(order._id)})).toBe(1);
+    await expect(settleCommercial({...fixture,branchId:'foreign'},input)).rejects.toMatchObject({statusCode:409});
   });
 });
