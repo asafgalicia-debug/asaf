@@ -5,9 +5,11 @@ vi.mock('../src/modules/proveedores/models/Supplier.js', () => ({ getSupplierMod
 vi.mock('../src/modules/productos/models/Product.js', () => ({ getProductModel: () => ({find:state.find}) }));
 import { pageCustomers } from '../src/modules/clientes/customerService.js';
 import { pageSuppliers } from '../src/modules/proveedores/supplierService.js';
+vi.mock('../src/modules/inventario/models/Warehouse.js', () => ({ getWarehouseModel: () => ({find:state.find}) }));
+import { pageWarehouses } from '../src/modules/inventario/warehouseService.js';
 import { pageProducts } from '../src/modules/productos/productService.js';
 beforeEach(() => { vi.clearAllMocks(); });
-describe.each([{kind:'customers',run:()=>pageCustomers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'suppliers',run:()=>pageSuppliers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'products',run:()=>pageProducts('co',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co'}}])('$kind service', entry => {
+describe.each([{kind:'warehouses',run:()=>pageWarehouses('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'customers',run:()=>pageCustomers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'suppliers',run:()=>pageSuppliers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'products',run:()=>pageProducts('co',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co'}}])('$kind service', entry => {
  it('queries only scoped page plus one row with stable ordering', async () => {
   state.exec.mockResolvedValue([{_id:'c',name:'C'},{_id:'b',name:'B'},{_id:'a',name:'A'}]);
   expect(await entry.run()).toEqual({items:[{id:'c',name:'C'},{id:'b',name:'B'}],nextCursor:'b'});
@@ -16,6 +18,7 @@ describe.each([{kind:'customers',run:()=>pageCustomers('co','br',{limit:2,search
 });
 
 describe.each([
+ {kind:'warehouses', run:(ids:string)=>pageWarehouses('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},
  {kind:'customers', run:(ids:string)=>pageCustomers('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},
  {kind:'suppliers', run:(ids:string)=>pageSuppliers('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},
  {kind:'products', run:(ids:string)=>pageProducts('co',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co'}}

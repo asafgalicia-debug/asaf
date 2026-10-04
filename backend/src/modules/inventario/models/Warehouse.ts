@@ -6,6 +6,8 @@ const schema = new Schema<WarehouseDocument>({
   status: { type: String, enum: ['ACTIVE', 'INACTIVE'], default: 'ACTIVE', required: true }
 }, { timestamps: true });
 schema.index({ companyId: 1, branchId: 1, code: 1 }, { unique: true });
+schema.index({ companyId: 1, branchId: 1, _id: -1 });
+schema.index({ companyId: 1, branchId: 1, status: 1, _id: -1 });
 let model: Model<WarehouseDocument> | undefined;
 export function getWarehouseModel(): Model<WarehouseDocument> {
   if (!model) model = mongoose.models.Warehouse ?? mongoose.model<WarehouseDocument>('Warehouse', schema);
