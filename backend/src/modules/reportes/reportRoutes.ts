@@ -1,3 +1,4 @@
+import {previewReport} from './reportPreview.js';
 ﻿import { Router, type Request } from 'express';
 
 import { logAuditEvent } from '../../audit/auditLogger.js';
@@ -21,6 +22,12 @@ function getTenantContext(req: Request): { companyId: string; branchId: string; 
 
 export function createReportRoutes(): Router {
   const router = Router();
+  router.get('/preview', authenticate, tenant, authorize('reportes.ver'), async (req,res,next)=>{
+    try {const context=getTenantContext(req);const {type,period}=req.query;
+      if(Object.keys(req.query).some(key=>!['type','period'].includes(key)) || typeof type!=='string' || !['sales','cash-flow'].includes(type) || typeof period!=='string' || !reportPeriods.includes(period as ReportPeriod))throw new AppError({code:'VALIDATION_ERROR',message:'Invalid report query',friendlyMessage:'Selecciona tipo y periodo válidos.',statusCode:400});
+      res.json({ok:true,data:await previewReport(context.companyId,context.branchId,type as 'sales'|'cash-flow',period as ReportPeriod)});
+    }catch(e){next(e);}
+  });
   router.get('/', authenticate, tenant, authorize('reportes.ver'), async (req, res, next) => {
     try {
       const context = getTenantContext(req);
