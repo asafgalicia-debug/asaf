@@ -1,3 +1,4 @@
+import {recordCommercialStock} from '../src/modules/inventario/stockService.js';
 import {getBankAccountModel,getCashMovementModel} from '../src/modules/finanzas/models/FinanceModels.js';
 import {pageBankAccounts,createBankAccount} from '../src/modules/finanzas/bankAccountService.js';
 import {pageCashMovements,createCashMovement} from '../src/modules/finanzas/cashMovementService.js';
@@ -162,5 +163,30 @@ describe('stock against a real local MongoDB replica set', () => {
     expect(second.nextCursor).toBeNull();
     expect((await listStockHistory(fixture.companyId, 'other-branch', { reference: 'opening' })).items).toEqual([]);
     expect((await listStockHistory(fixture.companyId, fixture.branchId, { reference: 'opening' })).items).toHaveLength(1);
+  });
+  it('rolls back stock and cash together when commercial work fails',async()=>{
+    const session=await mongoose.startSession();
+    try{
+      await expect(session.withTransaction(async()=>{
+        await recordCommercialStock(movement('commercial-rollback',3),'ISSUE',session);
+        await getCashMovementModel().create([{companyId:fixture.companyId,branchId:fixture.branchId,accountId:'test-account',concept:'commercial-rollback',type:'INFLOW',amount:3,date:'2026-10-04'}],{session});
+        throw new Error('force rollback');
+      })).rejects.toThrow('force rollback');
+    }finally{await session.endSession();}
+    expect(await quantityAt(fixture.warehouseId)).toBe(10);
+    expect(await getStockMovementModel().countDocuments({companyId:fixture.companyId,reference:'commercial-rollback'})).toBe(0);
+    expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'commercial-rollback'})).toBe(0);
+  });
+  it('commits stock and cash together and rejects insufficient shared stock',async()=>{
+    const session=await mongoose.startSession();
+    try{
+      await session.withTransaction(async()=>{
+        await recordCommercialStock(movement('commercial-commit',3),'ISSUE',session);
+        await getCashMovementModel().create([{companyId:fixture.companyId,branchId:fixture.branchId,accountId:'test-account',concept:'commercial-commit',type:'INFLOW',amount:3,date:'2026-10-04'}],{session});
+      });
+      await expect(session.withTransaction(()=>recordCommercialStock(movement('commercial-shortage',8),'ISSUE',session))).rejects.toMatchObject({statusCode:409});
+    }finally{await session.endSession();}
+    expect(await quantityAt(fixture.warehouseId)).toBe(7);
+    expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'commercial-commit'})).toBe(1);
   });
 });

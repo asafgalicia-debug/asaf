@@ -6,7 +6,7 @@ import { getWarehouseModel } from './models/Warehouse.js';
 import { getStockMovementModel } from './models/StockMovement.js';
 import { stockSearchLiteral, type StockPageQuery } from './stockPagination.js';
 
-type Receipt = { companyId: string; branchId: string; warehouseId: string; productId: string; quantity: number; reference: string; userId: string };
+export type Receipt = { companyId: string; branchId: string; warehouseId: string; productId: string; quantity: number; reference: string; userId: string };
 // A transfer is one immutable document with two balance effects. This preserves
 // the existing unique reference index without splitting an operation into writes.
 function balanceEffects(): PipelineStage[] {
@@ -30,7 +30,11 @@ export async function transferStock(input: Receipt & { destinationWarehouseId: s
   }
   return recordStock(input, 'TRANSFER');
 }
-async function recordStock(input: Receipt & { destinationWarehouseId?: string }, kind: 'RECEIPT' | 'ISSUE' | 'TRANSFER') {
+export async function recordCommercialStock(input: Receipt, kind:'RECEIPT'|'ISSUE', session:mongoose.ClientSession) {
+  if(!session.inTransaction())throw new AppError({code:'VALIDATION_ERROR',message:'Active transaction required',friendlyMessage:'La operación comercial requiere una transacción activa.',statusCode:400});
+  return recordStock(input,kind,session);
+}
+async function recordStock(input: Receipt & { destinationWarehouseId?: string }, kind: 'RECEIPT' | 'ISSUE' | 'TRANSFER', sharedSession?: mongoose.ClientSession) {
   if (!Number.isFinite(input.quantity) || input.quantity < 0.000001 || !input.reference.trim() || input.reference.trim().length > 100) {
     throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid receipt', friendlyMessage: 'Revisa cantidad y referencia de la entrada.', statusCode: 400 });
   }
@@ -48,10 +52,10 @@ async function recordStock(input: Receipt & { destinationWarehouseId?: string },
   const keys = [input.warehouseId, ...(kind === 'TRANSFER' ? [input.destinationWarehouseId!] : [])]
     .map((warehouseId) => JSON.stringify([input.companyId, input.branchId, warehouseId, input.productId])).sort();
   // Deterministic ordering also covers transfers in opposite directions.
-  for (const key of keys) await locks.updateOne({ _id: key }, { $setOnInsert: { version: 0 } }, { upsert: true });
-  const session = await mongoose.startSession();
+  for (const key of keys) await locks.updateOne({ _id: key }, { $setOnInsert: { version: 0 } }, { upsert: true, ...(sharedSession ? {session:sharedSession} : {}) });
+  const session = sharedSession ?? await mongoose.startSession();
   try {
-    return await session.withTransaction(async () => {
+    const execute = async () => {
       for (const key of keys) await locks.updateOne({ _id: key }, { $inc: { version: 1 } }, { session });
       if (kind !== 'RECEIPT') {
         const balances = await movements.aggregate([
@@ -66,13 +70,14 @@ async function recordStock(input: Receipt & { destinationWarehouseId?: string },
       }
       const [row] = await movements.create([{ ...input, kind, quantity: kind === 'RECEIPT' ? input.quantity : -input.quantity, reference: input.reference.trim() }], { session });
       return { id: String(row._id), warehouseId: row.warehouseId, destinationWarehouseId: row.destinationWarehouseId, productId: row.productId, quantity: row.quantity, reference: row.reference, kind: row.kind };
-    });
+    };
+    return sharedSession ? await execute() : await session.withTransaction(execute);
   } catch (error) {
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === 11000) {
       throw new AppError({ code: 'CONFLICT', message: 'Duplicate stock reference', friendlyMessage: 'Esta referencia ya fue registrada. No se duplicó el movimiento.', statusCode: 409 });
     }
     throw error;
-  } finally { await session.endSession(); }
+  } finally { if (!sharedSession) await session.endSession(); }
 }
 export async function listStock(companyId: string, branchId: string) {
   return getStockMovementModel().aggregate([
