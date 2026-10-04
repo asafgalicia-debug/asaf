@@ -6,10 +6,12 @@ vi.mock('../src/modules/productos/models/Product.js', () => ({ getProductModel: 
 import { pageCustomers } from '../src/modules/clientes/customerService.js';
 import { pageSuppliers } from '../src/modules/proveedores/supplierService.js';
 vi.mock('../src/modules/inventario/models/Warehouse.js', () => ({ getWarehouseModel: () => ({find:state.find}) }));
+vi.mock('../src/modules/productos/models/Category.js', () => ({ getCategoryModel: () => ({find:state.find}) }));
+import { pageCategories } from '../src/modules/productos/categoryService.js';
 import { pageWarehouses } from '../src/modules/inventario/warehouseService.js';
 import { pageProducts } from '../src/modules/productos/productService.js';
 beforeEach(() => { vi.clearAllMocks(); });
-describe.each([{kind:'warehouses',run:()=>pageWarehouses('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'customers',run:()=>pageCustomers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'suppliers',run:()=>pageSuppliers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'products',run:()=>pageProducts('co',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co'}}])('$kind service', entry => {
+describe.each([{kind:'categories',run:()=>pageCategories('co',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co'}},{kind:'warehouses',run:()=>pageWarehouses('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'customers',run:()=>pageCustomers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'suppliers',run:()=>pageSuppliers('co','br',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co',branchId:'br'}},{kind:'products',run:()=>pageProducts('co',{limit:2,search:'Test',cursor:'a'.repeat(24)}),scope:{companyId:'co'}}])('$kind service', entry => {
  it('queries only scoped page plus one row with stable ordering', async () => {
   state.exec.mockResolvedValue([{_id:'c',name:'C'},{_id:'b',name:'B'},{_id:'a',name:'A'}]);
   expect(await entry.run()).toEqual({items:[{id:'c',name:'C'},{id:'b',name:'B'}],nextCursor:'b'});
@@ -18,6 +20,7 @@ describe.each([{kind:'warehouses',run:()=>pageWarehouses('co','br',{limit:2,sear
 });
 
 describe.each([
+ {kind:'categories',run:(ids:string)=>pageCategories('co',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co'}},
  {kind:'warehouses', run:(ids:string)=>pageWarehouses('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},
  {kind:'customers', run:(ids:string)=>pageCustomers('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},
  {kind:'suppliers', run:(ids:string)=>pageSuppliers('co','br',{limit:20,search:'',ids,status:'ACTIVE'}),scope:{companyId:'co',branchId:'br'}},

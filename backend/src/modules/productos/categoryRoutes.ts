@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import { parseCatalogQuery } from '../../core/catalogPagination.js';
 import { Router } from 'express';
 import { z } from 'zod';
 import { AppError } from '../../errors/AppError.js';
@@ -6,7 +7,7 @@ import { logAuditEvent } from '../../audit/auditLogger.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
-import { createCategory, listCategories, renameCategory, updateCategoryStatus } from './categoryService.js';
+import { createCategory, listCategories, pageCategories, renameCategory, updateCategoryStatus } from './categoryService.js';
 const categorySchema = z.object({ name: z.string().trim().min(2).max(100), code: z.string().trim().min(2).max(24) }).strict();
 const renameSchema = z.object({ name: z.string().trim().min(2).max(100), expectedName: z.string().trim().min(2).max(100) }).strict();
 const statusSchema = z.object({ expectedStatus: z.enum(['ACTIVE', 'INACTIVE']), status: z.enum(['ACTIVE', 'INACTIVE']) }).strict();
@@ -17,6 +18,9 @@ function scope(req: Request): { companyId: string; branchId: string; userId: str
 }
 export function createCategoryRoutes(): Router {
   const router = Router();
+  router.get('/page', authenticate, tenant, authorize('usuarios.ver'), async (req, res, next) => {
+    try { const s = scope(req); res.json({ ok: true, data: await pageCategories(s.companyId, parseCatalogQuery(req.query)) }); } catch (error) { next(error); }
+  });
   router.get('/', authenticate, tenant, authorize('usuarios.ver'), async (req, res, next) => { try { const s = scope(req); res.json({ ok: true, data: await listCategories(s.companyId) }); } catch (error) { next(error); } });
   router.post('/', authenticate, tenant, authorize('usuarios.editar'), async (req, res, next) => {
     try {

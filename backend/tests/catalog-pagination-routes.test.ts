@@ -12,6 +12,8 @@ vi.mock('../src/modules/clientes/customerService.js', () => ({ pageCustomers: st
 vi.mock('../src/modules/proveedores/supplierService.js', () => ({ pageSuppliers: state.update, createSupplier: vi.fn(), listSuppliers: vi.fn(), updateSupplier: vi.fn() }));
 vi.mock('../src/modules/inventario/warehouseService.js', () => ({ pageWarehouses: state.update, createWarehouse: vi.fn(), listWarehouses: vi.fn(), renameWarehouse: vi.fn(), updateWarehouseStatus: vi.fn() }));
 vi.mock('../src/modules/inventario/stockService.js', () => ({ pageStock: state.update, listStock: vi.fn(), receiveStock: vi.fn(), issueStock: vi.fn(), transferStock: vi.fn() }));
+vi.mock('../src/modules/productos/categoryService.js', () => ({ pageCategories: state.update, listCategories: vi.fn(), createCategory: vi.fn(), renameCategory: vi.fn(), updateCategoryStatus: vi.fn() }));
+import { createCategoryRoutes } from '../src/modules/productos/categoryRoutes.js';
 import { createStockRoutes } from '../src/modules/inventario/stockRoutes.js';
 import { createWarehouseRoutes } from '../src/modules/inventario/warehouseRoutes.js';
 import { createProductRoutes } from '../src/modules/productos/productRoutes.js';
@@ -19,15 +21,15 @@ import { createCustomerRoutes } from '../src/modules/clientes/customerRoutes.js'
 import { createSupplierRoutes } from '../src/modules/proveedores/supplierRoutes.js';
 let server: Server; let base: string; const id = 'a'.repeat(24);
 beforeAll(async () => {
- const app = express(); app.use('/stock', createStockRoutes()); app.use('/warehouses', createWarehouseRoutes()); app.use(express.json()); app.use('/products', createProductRoutes()); app.use('/customers', createCustomerRoutes()); app.use('/suppliers', createSupplierRoutes());
+ const app = express(); app.use('/categories', createCategoryRoutes()); app.use('/stock', createStockRoutes()); app.use('/warehouses', createWarehouseRoutes()); app.use(express.json()); app.use('/products', createProductRoutes()); app.use('/customers', createCustomerRoutes()); app.use('/suppliers', createSupplierRoutes());
  app.use((error: any, _: any, res: any, __: any) => res.status(error.statusCode ?? 500).json({ error: error.code }));
  server = app.listen(0); await new Promise<void>(resolve => server.once('listening', resolve)); base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port;
 });
 afterAll(async () => { await new Promise<void>(resolve => server.close(() => resolve())); });
 beforeEach(() => { state.update.mockReset(); state.audit.mockReset(); });
-describe.each(['products','customers','suppliers','warehouses','stock'])('%s pages', kind => {
+describe.each(['products','customers','suppliers','warehouses','stock','categories'])('%s pages', kind => {
  const send = (query = '', auth = 'Bearer editor') => fetch(base + '/' + kind + '/page' + query, { headers: auth ? { Authorization: auth } : {} });
  it('requires authentication and read permission', async () => { expect((await send('', '')).status).toBe(401); expect((await send('', 'Bearer denied')).status).toBe(403); expect(state.update).not.toHaveBeenCalled(); });
  it('rejects unsafe pagination and tenant overrides', async () => { for (const query of ['?limit=51','?cursor=bad','?companyId=foreign','?branchId=foreign','?search=a&search=b']) expect((await send(query)).status).toBe(400); expect(state.update).not.toHaveBeenCalled(); });
- it('uses authenticated scope and returns the page without writing audit', async () => { const page = { items: [], nextCursor: null }; state.update.mockResolvedValue(page); const response = await send('?search=Test&limit=20'); expect(response.status).toBe(200); expect((await response.json()).data).toEqual(page); expect(state.update).toHaveBeenCalledWith(...(kind === 'products' ? ['co',{search:'Test',limit:20}] : ['co','br',{search:'Test',limit:20}])); expect(state.audit).not.toHaveBeenCalled(); });
+ it('uses authenticated scope and returns the page without writing audit', async () => { const page = { items: [], nextCursor: null }; state.update.mockResolvedValue(page); const response = await send('?search=Test&limit=20'); expect(response.status).toBe(200); expect((await response.json()).data).toEqual(page); expect(state.update).toHaveBeenCalledWith(...(['products','categories'].includes(kind) ? ['co',{search:'Test',limit:20}] : ['co','br',{search:'Test',limit:20}])); expect(state.audit).not.toHaveBeenCalled(); });
 });

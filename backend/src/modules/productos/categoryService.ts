@@ -1,6 +1,11 @@
 import { AppError } from '../../errors/AppError.js';
+import { catalogFilter, catalogSlice, type CatalogQuery } from '../../core/catalogPagination.js';
 import { getCategoryModel } from './models/Category.js';
 export type CategoryRecord = { id: string; companyId: string; name: string; code: string; status: 'ACTIVE' | 'INACTIVE' };
+export async function pageCategories(companyId: string, query: CatalogQuery) {
+  const rows = await getCategoryModel().find(catalogFilter({ companyId }, query, ['name', 'code'])).sort({ _id: -1 }).limit(query.limit + 1).lean().exec();
+  return catalogSlice(rows, query.limit);
+}
 export async function listCategories(companyId: string): Promise<CategoryRecord[]> {
   const rows = await getCategoryModel().find({ companyId }).sort({ name: 1 }).lean().exec();
   return rows.map(({ _id, ...row }) => ({ id: String(_id), ...row }));
