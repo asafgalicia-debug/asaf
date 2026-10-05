@@ -1,5 +1,5 @@
 import {getAuditEventModel} from '../src/modules/auditoria/models/AuditEvent.js';
-import {settleCommercial,getSettlementModel} from '../src/modules/ventas/commercialSettlement.js';
+import {settleCommercial,getSettlementModel,findCommercialSettlement} from '../src/modules/ventas/commercialSettlement.js';
 import {getSaleModel} from '../src/modules/ventas/models/Sale.js';
 import {getPurchaseOrderModel} from '../src/modules/compras/models/PurchaseOrder.js';
 import {recordCommercialStock} from '../src/modules/inventario/stockService.js';
@@ -199,6 +199,10 @@ describe('stock against a real local MongoDB replica set', () => {
     const input={kind:'sales',sourceId:String(sale._id),warehouseId:fixture.warehouseId,accountId:String(account._id),date:'2026-10-04'};
     const receipt=await settleCommercial(fixture,input);const retry=await settleCommercial(fixture,input);
     expect(retry.id).toBe(receipt.id);expect(await quantityAt(fixture.warehouseId)).toBe(7);
+    expect((await findCommercialSettlement(fixture,{kind:'sales',sourceId:String(sale._id)})).id).toBe(receipt.id);
+    await expect(findCommercialSettlement({...fixture,branchId:'foreign'},{kind:'sales',sourceId:String(sale._id)})).rejects.toMatchObject({statusCode:404});
+    await expect(findCommercialSettlement({...fixture,companyId:'foreign'},{kind:'sales',sourceId:String(sale._id)})).rejects.toMatchObject({statusCode:404});
+    await expect(findCommercialSettlement(fixture,{kind:'sales',sourceId:String(sale._id),companyId:'foreign'})).rejects.toMatchObject({statusCode:400});
     expect((await getSaleModel().findById(sale._id))?.status).toBe('PAGADA');
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'SALE:'+sale._id})).toBe(1);
     await expect(settleCommercial(fixture,{...input,date:'2026-10-05'})).rejects.toMatchObject({statusCode:409});
