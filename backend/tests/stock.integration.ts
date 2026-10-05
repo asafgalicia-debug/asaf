@@ -1,3 +1,4 @@
+import {pageEmployeeOptions} from '../src/modules/recursos-humanos/employeeOptions.js';
 import {getUserModel} from '../src/modules/usuarios/models/User.js';
 import {getDepartmentModel} from '../src/modules/empresas/models/Department.js';
 import {createAuditedEmployee} from '../src/modules/recursos-humanos/employeeService.js';
@@ -402,6 +403,16 @@ describe('stock against a real local MongoDB replica set', () => {
     expect(await getEmployeeModel().countDocuments({companyId:fixture.companyId})).toBe(0);
     const row=await createAuditedEmployee(input,{userId:fixture.userId});expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id,module:'rrhh'})).toBe(1);
     await expect(createAuditedEmployee(input,{userId:fixture.userId})).rejects.toMatchObject({statusCode:409});expect(await getEmployeeModel().countDocuments({companyId:fixture.companyId})).toBe(1);
+  });
+
+  it('employee selectors return active scoped records and omit credentials and permissions',async()=>{
+    const companyId=fixture.companyId,branchId=fixture.branchId;
+    for(const [i,active,branch] of [[1,true,branchId],[2,true,branchId],[3,false,branchId],[4,true,'foreign']] as const)await getUserModel().create({companyId,branchId:branch,email:randomUUID()+'@example.test',passwordHash:'test-only-placeholder',name:'Selector '+i,roleId:'test',permissions:['secret'],isActive:active});
+    const first=await pageEmployeeOptions(companyId,branchId,'users',{limit:1,search:'Selector'});expect(first.items).toHaveLength(1);expect(first.nextCursor).toBeTruthy();
+    const next=await pageEmployeeOptions(companyId,branchId,'users',{limit:1,search:'Selector',cursor:first.nextCursor!});expect(next.items).toHaveLength(1);expect(next.nextCursor).toBeNull();
+    for(const row of [...first.items,...next.items]){expect(row).not.toHaveProperty('passwordHash');expect(row).not.toHaveProperty('permissions');expect(row).not.toHaveProperty('email');expect(row).toMatchObject({companyId,branchId,isActive:true});}
+    await getDepartmentModel().create([{_id:'department-a-'+randomUUID(),companyId,branchId,name:'Selector active',code:'A',status:'ACTIVE'},{_id:'department-b-'+randomUUID(),companyId,branchId,name:'Selector inactive',code:'B',status:'INACTIVE'}]);
+    expect((await pageEmployeeOptions(companyId,branchId,'departments',{limit:20,search:'Selector'})).items).toHaveLength(1);
   });
 
 });
