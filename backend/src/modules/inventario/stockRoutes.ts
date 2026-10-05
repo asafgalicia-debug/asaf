@@ -4,13 +4,14 @@ import { AppError } from '../../errors/AppError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenant } from '../../middleware/tenant.js';
 import { authorize } from '../../middleware/authorize.js';
-import { listStock, pageStock, receiveStock, issueStock, transferStock } from './stockService.js';
+import { listStock, pageStock, pageStockAlerts, receiveStock, issueStock, transferStock } from './stockService.js';
 import { parseStockPageQuery } from './stockPagination.js';
 import { listStockHistory } from './stockHistoryService.js';
 const schema = z.object({ warehouseId: z.string().regex(/^[a-f\d]{24}$/i), productId: z.string().regex(/^[a-f\d]{24}$/i), quantity: z.number().finite().min(0.000001), reference: z.string().trim().min(1).max(100) }).strict();
 export function createStockRoutes() {
   const router = Router();
   router.use(authenticate, tenant);
+  router.get('/alerts',authorize('usuarios.ver'),async(req,res,next)=>{try{const companyId=req.tenant?.companyId,branchId=req.tenant?.branchId;if(!companyId||!branchId)throw new AppError({code:'UNAUTHORIZED',message:'Missing scope',friendlyMessage:'La sesión requiere empresa y sucursal.',statusCode:401});res.json({ok:true,data:await pageStockAlerts(companyId,branchId,parseStockPageQuery(req.query))});}catch(e){next(e);}});
   router.get('/page', authorize('usuarios.ver'), async (req, res, next) => {
     try {
       const { companyId, branchId } = req.tenant!;

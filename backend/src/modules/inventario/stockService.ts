@@ -1,3 +1,4 @@
+import {getModuleConfigModel} from '../configuracion/configService.js';
 import mongoose, { type PipelineStage } from 'mongoose';
 import { AppError } from '../../errors/AppError.js';
 import { getStockLockModel } from './models/StockLock.js';
@@ -89,12 +90,13 @@ export async function listStock(companyId: string, branchId: string) {
   ]).exec();
 }
 type StockPageRow = { warehouseId: string; productId: string; quantity: number; productName?: string; productSku?: string; warehouseName?: string; warehouseCode?: string };
-export async function pageStock(companyId: string, branchId: string, query: StockPageQuery) {
+export async function pageStock(companyId: string, branchId: string, query: StockPageQuery, belowThreshold?:number) {
   const pipeline: PipelineStage[] = [
     { $match: { companyId, branchId } }, ...balanceEffects(),
     { $group: { _id: { warehouseId: '$effects.warehouseId', productId: '$productId' }, quantity: { $sum: '$effects.quantity' } } },
     { $project: { _id: 0, warehouseId: '$_id.warehouseId', productId: '$_id.productId', quantity: 1 } }
   ];
+  if(belowThreshold!==undefined)pipeline.push({$match:{quantity:{$lt:belowThreshold}}});
   if (query.cursor) {
     const [warehouseId, productId] = query.cursor.split(':');
     pipeline.push({ $match: { $or: [{ warehouseId: { $gt: warehouseId } }, { warehouseId, productId: { $gt: productId } }] } });
@@ -109,4 +111,11 @@ export async function pageStock(companyId: string, branchId: string, query: Stoc
   const rows = await getStockMovementModel().aggregate<StockPageRow>(pipeline).exec();
   const items = rows.slice(0, query.limit), last = items[items.length - 1];
   return { items, nextCursor: rows.length > query.limit && last ? `${last.warehouseId}:${last.productId}` : null };
+}
+
+export async function pageStockAlerts(companyId:string,branchId:string,query:StockPageQuery){
+ const config=await getModuleConfigModel().findOne({companyId,module:'inventario'}).lean().exec();const threshold=config?.config?.stockAlertThreshold;
+ if(threshold===undefined)return {configured:false,threshold:null,configVersion:config?.version??null,items:[],nextCursor:null};
+ if(typeof threshold!=='number'||!Number.isInteger(threshold)||threshold<0||threshold>1000000)throw new AppError({code:'VALIDATION_ERROR',message:'Invalid stored threshold',friendlyMessage:'El umbral guardado no es válido. Revisa la configuración de inventario.',statusCode:400});
+ return {configured:true,threshold,configVersion:config?.version??0,...await pageStock(companyId,branchId,query,threshold)};
 }

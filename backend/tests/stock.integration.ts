@@ -17,7 +17,7 @@ import { getWarehouseModel } from '../src/modules/inventario/models/Warehouse.js
 import { getProductModel } from '../src/modules/productos/models/Product.js';
 import { getStockMovementModel } from '../src/modules/inventario/models/StockMovement.js';
 import { getStockLockModel } from '../src/modules/inventario/models/StockLock.js';
-import { issueStock, listStock, pageStock, receiveStock, transferStock } from '../src/modules/inventario/stockService.js';
+import { issueStock, listStock, pageStock, pageStockAlerts, receiveStock, transferStock } from '../src/modules/inventario/stockService.js';
 import { listStockHistory } from '../src/modules/inventario/stockHistoryService.js';
 
 // Deliberately do not load .env. Require an explicit local test replica set;
@@ -202,6 +202,18 @@ describe('stock against a real local MongoDB replica set', () => {
     const saved=await getModuleConfig(fixture.companyId,'inventario');expect(saved.version).toBe(2);expect(saved.config.existingPreference).toBe('keep');
     expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'configuracion'})).toBe(2);
     await expect(updateInventoryConfig(fixture,{expectedVersion:2,stockAlertThreshold:10,companyId:'foreign'})).rejects.toMatchObject({statusCode:400});
+  });
+  it('stock alerts use company threshold and recorded branch balances before pagination',async()=>{
+    const query={search:'',limit:20};expect((await pageStockAlerts(fixture.companyId,fixture.branchId,query)).configured).toBe(false);
+    await updateInventoryConfig(fixture,{expectedVersion:null,stockAlertThreshold:10});expect((await pageStockAlerts(fixture.companyId,fixture.branchId,query)).items).toHaveLength(0);
+    await issueStock(movement('alert-issue',2));const page=await pageStockAlerts(fixture.companyId,fixture.branchId,query);expect(page.threshold).toBe(10);expect(page.items).toHaveLength(1);expect(page.items[0].quantity).toBe(8);
+    expect((await pageStockAlerts(fixture.companyId,'foreign',query)).items).toHaveLength(0);
+    expect((await pageStockAlerts('foreign',fixture.branchId,query)).configured).toBe(false);
+    await receiveStock({...movement('alert-destination',2),warehouseId:fixture.destinationWarehouseId});
+    const first=await pageStockAlerts(fixture.companyId,fixture.branchId,{search:'',limit:1});expect(first.items).toHaveLength(1);expect(first.nextCursor).not.toBeNull();
+    const second=await pageStockAlerts(fixture.companyId,fixture.branchId,{search:'',limit:1,cursor:first.nextCursor!});expect(second.items).toHaveLength(1);expect(second.nextCursor).toBeNull();expect([first.items[0].quantity,second.items[0].quantity].sort()).toEqual([2,8]);
+    expect((await pageStockAlerts(fixture.companyId,fixture.branchId,{search:'Destination',limit:20})).items).toHaveLength(1);
+    await updateInventoryConfig(fixture,{expectedVersion:1,stockAlertThreshold:0});expect((await pageStockAlerts(fixture.companyId,fixture.branchId,query)).items).toHaveLength(0);
   });
   it('configuration audit failure leaves no saved preference',async()=>{
     const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Config audit failure'));

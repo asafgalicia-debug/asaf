@@ -1,3 +1,4 @@
+vi.mock('../src/modules/configuracion/configService.js',()=>({getModuleConfigModel:()=>({findOne:()=>({lean:()=>({exec:async()=>null})})})}));
 import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ warehouse: vi.fn(), product: vi.fn(), create: vi.fn(), aggregate: vi.fn(), init: vi.fn(), lock: vi.fn(), end: vi.fn() }));
 vi.mock('mongoose', () => ({ default: { startSession: async () => ({ withTransaction: async (callback: () => Promise<unknown>) => callback(), endSession: mocks.end }) } }));
