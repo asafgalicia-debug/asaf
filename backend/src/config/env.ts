@@ -22,7 +22,10 @@ const envSchema = z.object({
   ),
   MONGODB_DB_NAME: z.string().trim().default('erp_universal'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
-  LOG_LEVEL: z.string().default('info')
+  LOG_LEVEL: z.string().default('info'),
+  RESEND_API_KEY: z.string().trim().optional(),
+  RESEND_FROM: z.string().trim().default('Núcleo ERP <onboarding@resend.dev>'),
+  EMAIL_VERIFICATION_BASE_URL: z.string().url().refine(value=>value.startsWith('https://'),'La verificación requiere HTTPS').default('https://nucleo-erp-api.onrender.com/api/v1')
 });
 
 const parsed = envSchema.safeParse(process.env);

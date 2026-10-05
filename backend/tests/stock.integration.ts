@@ -1,3 +1,4 @@
+import {requestEmailVerification,confirmEmailVerification,verificationDigest} from '../src/modules/auth/emailVerification.js';
 import {updateAuditedEmployeeStatus} from '../src/modules/recursos-humanos/employeeService.js';
 import {updateAuditedEmployee} from '../src/modules/recursos-humanos/employeeService.js';
 import {createAuditedDepartment} from '../src/modules/empresas/departmentService.js';
@@ -467,5 +468,25 @@ describe('stock against a real local MongoDB replica set', () => {
    expect(await updateAuditedEmployeeStatus(activate,{userId})).toMatchObject({status:'ACTIVE',userId:String(user._id),departmentId,fullName:'Test Employee'});
    expect((await getUserModel().findById(user._id).lean())?.isActive).toBe(true);
   });
+
+ it('email verification uses hashed expiring single-use tokens and persistent cooldown',async()=>{
+  const {companyId,branchId}=fixture;const user=await getUserModel().create({companyId,branchId,email:randomUUID()+'@example.test',passwordHash:'test-only-placeholder',name:'Verify User',roleId:'test',permissions:[],isActive:true});
+  const scope={id:String(user._id),companyId,branchId},config={apiKey:'test-key',from:'onboarding@resend.dev',baseUrl:'https://example.test/api/v1'};
+  let token='';const send=vi.fn(async(_config:any,input:any)=>{token=new URL(input.text.match(/https:\/\/[^\s]+/)[0]).searchParams.get('token')!;expect(input.to).toBe(user.email);return {id:'test-message'};});
+  expect(await requestEmailVerification(scope,config,send)).toEqual({status:'sent'});expect(token).toMatch(/^[a-f0-9]{64}$/);
+  const stored=await getUserModel().findById(user._id).select('+emailVerificationHash +emailVerificationExpiresAt').lean();expect(stored?.emailVerificationHash).toBe(verificationDigest(token));expect(stored?.emailVerificationHash).not.toBe(token);expect((stored?.emailVerificationExpiresAt?.getTime()??0)-Date.now()).toBeLessThanOrEqual(15*60000);
+  expect(await getUserModel().findById(user._id).lean()).not.toHaveProperty('emailVerificationHash');
+  await expect(requestEmailVerification(scope,config,send)).rejects.toMatchObject({statusCode:429});expect(send).toHaveBeenCalledTimes(1);
+  await getUserModel().updateOne({_id:user._id},{$set:{email:'changed@example.test'}});await expect(confirmEmailVerification(token)).rejects.toMatchObject({statusCode:400});await getUserModel().updateOne({_id:user._id},{$set:{email:user.email,emailVerificationExpiresAt:new Date(0)}});await expect(confirmEmailVerification(token)).rejects.toMatchObject({statusCode:400});
+  await getUserModel().updateOne({_id:user._id},{$set:{emailVerificationExpiresAt:new Date(Date.now()+60000)}});
+  const results=await Promise.allSettled([confirmEmailVerification(token),confirmEmailVerification(token)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await getUserModel().findById(user._id).lean())?.emailVerifiedAt).toBeInstanceOf(Date);
+  await expect(confirmEmailVerification(token)).rejects.toMatchObject({statusCode:400});expect(await requestEmailVerification(scope,config,send)).toEqual({status:'verified'});
+ });
+ it('failed verification delivery removes usable tokens without exposing them',async()=>{
+  const {companyId,branchId}=fixture;const user=await getUserModel().create({companyId,branchId,email:randomUUID()+'@example.test',passwordHash:'test-only-placeholder',name:'Verify User',roleId:'test',permissions:[],isActive:true});
+  const scope={id:String(user._id),companyId,branchId},config={apiKey:'test-key',from:'onboarding@resend.dev',baseUrl:'https://example.test/api/v1'},send=vi.fn().mockRejectedValue(new Error('mock delivery failure'));
+  await expect(requestEmailVerification({...scope,branchId:'foreign'},config,send)).rejects.toMatchObject({statusCode:401});expect(send).not.toHaveBeenCalled();
+  await expect(requestEmailVerification(scope,config,send)).rejects.toThrow('mock delivery failure');expect(await getUserModel().findById(user._id).select('+emailVerificationHash').lean()).not.toHaveProperty('emailVerificationHash');
+ });
 
 });

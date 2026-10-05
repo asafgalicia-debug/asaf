@@ -10,6 +10,11 @@ export type UserDocument = {
   permissions: string[];
   isActive: boolean;
   lastLoginAt?: Date;
+  emailVerifiedAt?: Date;
+  emailVerificationHash?: string;
+  emailVerificationEmail?: string;
+  emailVerificationExpiresAt?: Date;
+  emailVerificationSentAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -24,7 +29,12 @@ const userSchema = new Schema<UserDocument>(
     roleId: { type: String, required: true },
     permissions: [{ type: String }],
     isActive: { type: Boolean, default: true },
-    lastLoginAt: { type: Date }
+    lastLoginAt: { type: Date },
+    emailVerifiedAt: {type:Date},
+    emailVerificationHash: {type:String,select:false},
+    emailVerificationEmail: {type:String,select:false},
+    emailVerificationExpiresAt: {type:Date,select:false},
+    emailVerificationSentAt: {type:Date,select:false}
   },
   {
     timestamps: true
