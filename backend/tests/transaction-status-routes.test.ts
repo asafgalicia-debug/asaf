@@ -1,4 +1,4 @@
-vi.mock('../src/core/commercialCreation.js',()=>({createAuditedSale:vi.fn(),createAuditedPurchaseOrder:vi.fn()}));
+vi.mock('../src/core/commercialCreation.js',()=>({createAuditedSale:vi.fn(),createAuditedPurchaseOrder:vi.fn(),updateAuditedSaleStatus:state.update,updateAuditedPurchaseOrderStatus:state.update}));
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
@@ -33,7 +33,7 @@ describe.each(['sales', 'purchase-orders'])('%s PATCH', kind => {
  it('uses session scope and records audit without personal data', async () => {
   state.update.mockResolvedValue({ id, status: body.status });
   const response = await send(body); expect(response.status).toBe(200);
-  expect(state.update).toHaveBeenCalledWith(id, 'co', 'br', body.expectedStatus, body.status);
-  expect(state.audit).toHaveBeenCalledWith(expect.objectContaining({ action: 'UPDATE', entityId: id, details: { previousStatus: 'PENDIENTE', status: body.status }, companyId: 'co', branchId: 'br' }));
+  expect(state.update).toHaveBeenCalledWith(id, 'co', 'br', body.expectedStatus, body.status, expect.objectContaining({userId:'user'}));
+  expect(state.audit).not.toHaveBeenCalled();
  });
 });

@@ -1,4 +1,4 @@
-vi.mock('../src/core/commercialCreation.js',()=>({createAuditedSale:state.create,createAuditedPurchaseOrder:state.create}));
+vi.mock('../src/core/commercialCreation.js',()=>({createAuditedSale:state.create,createAuditedPurchaseOrder:state.create,updateAuditedSaleStatus:state.update,updateAuditedPurchaseOrderStatus:state.update}));
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';

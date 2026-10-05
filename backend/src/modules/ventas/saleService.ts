@@ -22,11 +22,11 @@ export async function createSale(input: { companyId: string; branchId: string; c
   const row = session ? (await getSaleModel().create([{ ...input, unitPrice, total, status: 'PENDIENTE' }], { session }))[0] : await getSaleModel().create({ ...input, unitPrice, total, status: 'PENDIENTE' });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, customerId: row.customerId, productId: row.productId, quantity: row.quantity, unitPrice: row.unitPrice, total: row.total, status: row.status };
 }
-export async function updateSaleStatus(id: string, companyId: string, branchId: string, expectedStatus: SaleStatus, status: SaleStatus): Promise<SaleRecord> {
+export async function updateSaleStatus(id: string, companyId: string, branchId: string, expectedStatus: SaleStatus, status: SaleStatus, session?: ClientSession): Promise<SaleRecord> {
   if (!allowedTransactionTransition('sales', expectedStatus, status)) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Unsupported status transition', friendlyMessage: 'Este cambio de estado no está permitido.', statusCode: 400 });
   const row = await getSaleModel().findOneAndUpdate(
     { _id: id, companyId, branchId, status: expectedStatus },
-    { $set: { status } }, { new: true, runValidators: true }
+    { $set: { status } }, { new: true, runValidators: true, ...(session ? { session } : {}) }
   ).exec();
   if (!row) throw new AppError({ code: 'CONFLICT', message: 'Transaction unavailable or state changed', friendlyMessage: 'El registro cambió o no está disponible en esta sucursal. Actualiza el listado.', statusCode: 409 });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, customerId: row.customerId, productId: row.productId, quantity: row.quantity, unitPrice: row.unitPrice, total: row.total, status: row.status };
