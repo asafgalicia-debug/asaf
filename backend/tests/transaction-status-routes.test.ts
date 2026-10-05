@@ -1,3 +1,4 @@
+vi.mock('../src/core/commercialCreation.js',()=>({createAuditedSale:vi.fn(),createAuditedPurchaseOrder:vi.fn()}));
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';

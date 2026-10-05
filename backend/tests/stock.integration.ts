@@ -1,3 +1,4 @@
+import {createAuditedSale,createAuditedPurchaseOrder} from '../src/core/commercialCreation.js';
 import {createSale} from '../src/modules/ventas/saleService.js';
 import {createPurchaseOrder} from '../src/modules/compras/purchaseOrderService.js';
 import {getCustomerModel} from '../src/modules/clientes/models/Customer.js';
@@ -315,6 +316,20 @@ describe('stock against a real local MongoDB replica set', () => {
     await getSupplierModel().updateOne({_id:supplier._id},{$set:{branchId:fixture.branchId}});
     expect((await createSale({...common,customerId:String(customer._id)})).status).toBe('PENDIENTE');
     expect((await createPurchaseOrder({...common,supplierId:String(supplier._id),unitCost:2})).status).toBe('PENDIENTE');
+  });
+
+  it('commercial document creation commits audit and rolls back when audit storage fails',async()=>{
+    const contact={companyId:fixture.companyId,branchId:fixture.branchId,name:'Atomic contact',taxId:'ATOMIC123',email:'test@example.com',status:'ACTIVE'};
+    const customer=await getCustomerModel().create(contact),supplier=await getSupplierModel().create(contact);
+    const common={companyId:fixture.companyId,branchId:fixture.branchId,productId:fixture.productId,quantity:1};
+    const operations=[()=>createAuditedSale({...common,customerId:String(customer._id)},{userId:fixture.userId}),()=>createAuditedPurchaseOrder({...common,supplierId:String(supplier._id),unitCost:2},{userId:fixture.userId})];
+    for(const operation of operations){
+      const row=await operation();expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id,action:'CREATE'})).toBe(1);
+      const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Commercial audit failure'));
+      try{await expect(operation()).rejects.toThrow('Commercial audit failure');}finally{spy.mockRestore();}
+    }
+    expect(await getSaleModel().countDocuments({companyId:fixture.companyId})).toBe(1);expect(await getPurchaseOrderModel().countDocuments({companyId:fixture.companyId})).toBe(1);
+    expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,action:'CREATE'})).toBe(2);
   });
 
 });

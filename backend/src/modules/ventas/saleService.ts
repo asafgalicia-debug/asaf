@@ -1,3 +1,4 @@
+import type { ClientSession } from 'mongoose';
 import { commercialFilter, type CommercialQuery } from '../../core/commercialPagination.js';
 import { catalogSlice } from '../../core/catalogPagination.js';
 import { allowedTransactionTransition } from '../../core/transactionStatus.js';
@@ -10,15 +11,15 @@ export async function listSales(companyId: string, branchId: string): Promise<Sa
   const rows = await getSaleModel().find({ companyId, branchId }).sort({ createdAt: -1 }).lean().exec();
   return rows.map(({ _id, ...row }) => ({ id: String(_id), ...row }));
 }
-export async function createSale(input: { companyId: string; branchId: string; customerId: string; productId: string; quantity: number }): Promise<SaleRecord> {
+export async function createSale(input: { companyId: string; branchId: string; customerId: string; productId: string; quantity: number }, session?: ClientSession): Promise<SaleRecord> {
   const [customer, product] = await Promise.all([
-    getCustomerModel().exists({ _id: input.customerId, companyId: input.companyId, branchId: input.branchId, status: 'ACTIVE' }),
-    getProductModel().findOne({ _id: input.productId, companyId: input.companyId, status: 'ACTIVE' }).select('price').lean().exec()
+    getCustomerModel().exists({ _id: input.customerId, companyId: input.companyId, branchId: input.branchId, status: 'ACTIVE' }).session(session ?? null),
+    getProductModel().findOne({ _id: input.productId, companyId: input.companyId, status: 'ACTIVE' }).session(session ?? null).select('price').lean().exec()
   ]);
   if (!customer || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Sale references are invalid', friendlyMessage: 'El cliente y el producto deben existir, estar activos y pertenecer a tu empresa; el contacto debe ser de tu sucursal.', statusCode: 400 });
   const unitPrice = Number(product.price);
   const total = Math.round(unitPrice * input.quantity * 100) / 100;
-  const row = await getSaleModel().create({ ...input, unitPrice, total, status: 'PENDIENTE' });
+  const row = session ? (await getSaleModel().create([{ ...input, unitPrice, total, status: 'PENDIENTE' }], { session }))[0] : await getSaleModel().create({ ...input, unitPrice, total, status: 'PENDIENTE' });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, customerId: row.customerId, productId: row.productId, quantity: row.quantity, unitPrice: row.unitPrice, total: row.total, status: row.status };
 }
 export async function updateSaleStatus(id: string, companyId: string, branchId: string, expectedStatus: SaleStatus, status: SaleStatus): Promise<SaleRecord> {

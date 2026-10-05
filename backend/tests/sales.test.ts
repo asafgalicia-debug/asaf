@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ rows: [] as any[] }));
-vi.mock('../src/modules/clientes/models/Customer.js', () => ({ getCustomerModel: () => ({ exists: async (filter: any) => filter.companyId === 'co-1' && filter.branchId === 'br-1' && filter._id === 'cust-1' }) }));
-vi.mock('../src/modules/productos/models/Product.js', () => ({ getProductModel: () => ({ findOne: () => { const query: any = { select: () => query, lean: () => query, exec: async () => ({ price: 1299.99 }) }; return query; } }) }));
+vi.mock('../src/modules/clientes/models/Customer.js', () => ({ getCustomerModel: () => ({ exists: (filter: any) => ({ session: async () => filter.companyId === 'co-1' && filter.branchId === 'br-1' && filter._id === 'cust-1' }) }) }));
+vi.mock('../src/modules/productos/models/Product.js', () => ({ getProductModel: () => ({ findOne: () => { const query: any = { session: () => query, select: () => query, lean: () => query, exec: async () => ({ price: 1299.99 }) }; return query; } }) }));
 vi.mock('../src/modules/ventas/models/Sale.js', () => ({ getSaleModel: () => ({
   find: (filter: any) => { const query: any = { sort: () => query, lean: () => query, exec: async () => state.rows.filter((row) => row.companyId === filter.companyId && row.branchId === filter.branchId) }; return query; },
   create: async (input: any) => { const row = { ...input, _id: `sale-${state.rows.length + 1}` }; state.rows.push(row); return row; }
