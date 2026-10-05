@@ -7,7 +7,7 @@ import { AppError } from '../../errors/AppError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
-import { updateAuditedEmployee, createAuditedEmployee, listEmployees, pageEmployees } from './employeeService.js';
+import { updateAuditedEmployeeStatus, updateAuditedEmployee, createAuditedEmployee, listEmployees, pageEmployees } from './employeeService.js';
 const schema = z.object({ departmentId: z.string().trim().min(1).max(100), userId: z.string().regex(/^[a-f0-9]{24}$/i), fullName: z.string().trim().min(2).max(120), position: z.string().trim().min(2).max(100) }).strict();
 function scope(req: Request): { companyId: string; branchId: string; userId: string } { const t = req.tenant; if (!t?.companyId || !t.branchId || !t.userId) throw new AppError({ code: 'UNAUTHORIZED', message: 'Tenant context missing', friendlyMessage: 'La sesion no tiene empresa y sucursal activas.', statusCode: 401 }); return { companyId: t.companyId, branchId: t.branchId, userId: t.userId }; }
 export function createEmployeeRoutes(): Router {
@@ -21,6 +21,11 @@ export function createEmployeeRoutes(): Router {
     const parsed=fields.extend({expected:fields}).strict().safeParse(req.body);
     if(!/^[a-f0-9]{24}$/i.test(String(req.params.id))||!parsed.success)throw new AppError({code:'VALIDATION_ERROR',message:'Invalid employee update',friendlyMessage:'Revisa el nombre, puesto y registro original.',statusCode:400});
     res.json({ok:true,data:await updateAuditedEmployee({...s,id:String(req.params.id),...parsed.data},{userId:s.userId,ipAddress:req.ip})});
+  }catch(error){next(error);}});
+  router.patch('/:id/status',authenticate,tenant,authorize('rrhh.editar'),async(req,res,next)=>{try{
+    const s=scope(req);const parsed=z.object({status:z.enum(['ACTIVE','INACTIVE']),expectedStatus:z.enum(['ACTIVE','INACTIVE'])}).strict().safeParse(req.body);
+    if(!/^[a-f0-9]{24}$/i.test(String(req.params.id))||!parsed.success)throw new AppError({code:'VALIDATION_ERROR',message:'Invalid employee status input',friendlyMessage:'Revisa el estado actual y nuevo del empleado.',statusCode:400});
+    res.json({ok:true,data:await updateAuditedEmployeeStatus({companyId:s.companyId,branchId:s.branchId,id:String(req.params.id),...parsed.data},{userId:s.userId,ipAddress:req.ip})});
   }catch(error){next(error);}});
   return router;
 }

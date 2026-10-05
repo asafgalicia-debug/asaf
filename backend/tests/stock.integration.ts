@@ -1,3 +1,4 @@
+import {updateAuditedEmployeeStatus} from '../src/modules/recursos-humanos/employeeService.js';
 import {updateAuditedEmployee} from '../src/modules/recursos-humanos/employeeService.js';
 import {createAuditedDepartment} from '../src/modules/empresas/departmentService.js';
 import {getBranchModel} from '../src/modules/empresas/models/Branch.js';
@@ -446,6 +447,25 @@ describe('stock against a real local MongoDB replica set', () => {
     expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(results.filter(r=>r.status==='rejected')).toHaveLength(1);
     expect(await audit.countDocuments({companyId,branchId,module:'rrhh',action:'UPDATE',entityId:String(employee._id)})).toBe(1);
     expect(await getEmployeeModel().findById(employee._id).lean()).toMatchObject({userId:'linked-user',departmentId:'dept',status:'ACTIVE'});
+  });
+
+  it('employee activation validates links and status audit rolls back and serializes transitions',async()=>{
+   const {companyId,branchId,userId}=fixture;
+   const user=await getUserModel().create({companyId,branchId,email:randomUUID()+'@example.test',passwordHash:'test-only-placeholder',name:'Employee',roleId:'test',permissions:[],isActive:true});
+   const departmentId='department-'+randomUUID();await getDepartmentModel().create({_id:departmentId,companyId,branchId,name:'Operations',code:'OPS',status:'ACTIVE'});
+   const employee=await getEmployeeModel().create({companyId,branchId,userId:String(user._id),departmentId,fullName:'Test Employee',position:'Operations',status:'ACTIVE'});
+   const input={companyId,branchId,id:String(employee._id),status:'INACTIVE' as const,expectedStatus:'ACTIVE' as const};const audit=getAuditEventModel();
+   const failure=vi.spyOn(audit,'create').mockRejectedValueOnce(new Error('audit failure'));
+   try{await expect(updateAuditedEmployeeStatus(input,{userId})).rejects.toThrow('audit failure');}finally{failure.mockRestore();}
+   expect((await getEmployeeModel().findById(employee._id).lean())?.status).toBe('ACTIVE');
+   const results=await Promise.allSettled([updateAuditedEmployeeStatus(input,{userId}),updateAuditedEmployeeStatus(input,{userId})]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+   expect(await audit.countDocuments({companyId,branchId,module:'rrhh',entityId:String(employee._id)})).toBe(1);
+   const activate={...input,status:'ACTIVE' as const,expectedStatus:'INACTIVE' as const};
+   await getUserModel().updateOne({_id:user._id},{$set:{isActive:false}});await expect(updateAuditedEmployeeStatus(activate,{userId})).rejects.toMatchObject({statusCode:400});await getUserModel().updateOne({_id:user._id},{$set:{isActive:true}});
+   await getDepartmentModel().updateOne({_id:departmentId},{$set:{status:'INACTIVE'}});await expect(updateAuditedEmployeeStatus(activate,{userId})).rejects.toMatchObject({statusCode:400});await getDepartmentModel().updateOne({_id:departmentId},{$set:{status:'ACTIVE'}});
+   await expect(updateAuditedEmployeeStatus({...activate,branchId:'foreign'},{userId})).rejects.toMatchObject({statusCode:409});
+   expect(await updateAuditedEmployeeStatus(activate,{userId})).toMatchObject({status:'ACTIVE',userId:String(user._id),departmentId,fullName:'Test Employee'});
+   expect((await getUserModel().findById(user._id).lean())?.isActive).toBe(true);
   });
 
 });
