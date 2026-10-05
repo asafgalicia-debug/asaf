@@ -5,7 +5,7 @@ import {getSaleModel} from '../src/modules/ventas/models/Sale.js';
 import {getPurchaseOrderModel} from '../src/modules/compras/models/PurchaseOrder.js';
 import {recordCommercialStock} from '../src/modules/inventario/stockService.js';
 import {getBankAccountModel,getCashMovementModel} from '../src/modules/finanzas/models/FinanceModels.js';
-import {pageBankAccounts,createBankAccount} from '../src/modules/finanzas/bankAccountService.js';
+import {pageBankAccounts,createBankAccount,createAuditedBankAccount} from '../src/modules/finanzas/bankAccountService.js';
 import {pageCashMovements,createCashMovement,createAuditedCashMovement} from '../src/modules/finanzas/cashMovementService.js';
 import { getCategoryModel } from '../src/modules/productos/models/Category.js';
 import { updateCategoryCode } from '../src/modules/productos/categoryService.js';
@@ -285,6 +285,19 @@ describe('stock against a real local MongoDB replica set', () => {
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId})).toBe(1);
     await expect(createAuditedCashMovement({...input,branchId:'foreign'},{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId})).toBe(1);
+  });
+
+  it('bank account creation rolls back on audit failure and prevents normalized duplicates',async()=>{
+    const input={companyId:fixture.companyId,branchId:fixture.branchId,name:' Account ',bankName:' Bank ',iban:' test 12345 '};
+    const row=await createAuditedBankAccount(input,{userId:fixture.userId});
+    expect(row).toMatchObject({name:'Account',bankName:'Bank',iban:'TEST12345',status:'ACTIVE'});
+    expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id,module:'finanzas.cuentas'})).toBe(1);
+    await expect(createAuditedBankAccount(input,{userId:fixture.userId})).rejects.toMatchObject({statusCode:409});
+    const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Account audit failure'));
+    try{await expect(createAuditedBankAccount({...input,iban:'ROLLBACK123'},{userId:fixture.userId})).rejects.toThrow('Account audit failure');}finally{spy.mockRestore();}
+    expect(await getBankAccountModel().countDocuments({companyId:fixture.companyId})).toBe(1);
+    expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'finanzas.cuentas'})).toBe(1);
+    const other=await createAuditedBankAccount({...input,branchId:'other-branch'},{userId:fixture.userId});expect(other.branchId).toBe('other-branch');
   });
 
 });

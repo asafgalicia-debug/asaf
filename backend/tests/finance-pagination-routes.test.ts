@@ -7,7 +7,7 @@ vi.mock('../src/middleware/authenticate.js', () => ({ authenticate: (req: any, r
 vi.mock('../src/middleware/tenant.js', () => ({ tenant: (req: any, _: any, next: any) => { req.tenant = { companyId: 'co', branchId: 'br', userId: 'user' }; next(); } }));
 vi.mock('../src/middleware/authorize.js', () => ({ authorize: (permission: string) => (req: any, res: any, next: any) => ['usuarios.ver','usuarios.editar'].includes(permission) && req.headers.authorization === 'Bearer editor' ? next() : res.sendStatus(403) }));
 vi.mock('../src/audit/auditLogger.js', () => ({ logAuditEvent: state.audit }));
-vi.mock('../src/modules/finanzas/bankAccountService.js',()=>({pageBankAccounts:state.update,createBankAccount:vi.fn(),listBankAccounts:vi.fn()}));
+vi.mock('../src/modules/finanzas/bankAccountService.js',()=>({pageBankAccounts:state.update,createAuditedBankAccount:state.create,listBankAccounts:vi.fn()}));
 vi.mock('../src/modules/finanzas/cashMovementService.js',()=>({pageCashMovements:state.update,createAuditedCashMovement:state.create,listCashMovements:vi.fn()}));
 import {createBankAccountRoutes} from '../src/modules/finanzas/bankAccountRoutes.js';
 import {createCashMovementRoutes} from '../src/modules/finanzas/cashMovementRoutes.js';
@@ -38,4 +38,12 @@ it('cash writes pass the authenticated audit user into atomic persistence', asyn
  state.create.mockReset();state.create.mockResolvedValue({id});
  const response=await fetch(base+'/cash-movements',{method:'POST',headers:{Authorization:'Bearer editor','Content-Type':'application/json'},body:JSON.stringify({accountId:id,concept:'Cash test',type:'INFLOW',amount:1,date:'2026-10-04'})});
  expect(response.status).toBe(201);expect(state.create).toHaveBeenCalledWith(expect.objectContaining({companyId:'co',branchId:'br'}),expect.objectContaining({userId:'user'}));expect(state.audit).not.toHaveBeenCalled();
+});
+
+it('bank account writes use authenticated audit context and reject tenant overrides',async()=>{
+ state.create.mockReset();state.create.mockResolvedValue({id});
+ const send=(body:unknown)=>fetch(base+'/bank-accounts',{method:'POST',headers:{Authorization:'Bearer editor','Content-Type':'application/json'},body:JSON.stringify(body)});
+ const valid={name:'Test account',bankName:'Test bank',iban:'TEST12345'};
+ expect((await send({...valid,companyId:'foreign'})).status).toBe(400);expect(state.create).not.toHaveBeenCalled();
+ expect((await send(valid)).status).toBe(201);expect(state.create).toHaveBeenCalledWith({...valid,companyId:'co',branchId:'br'},expect.objectContaining({userId:'user'}));expect(state.audit).not.toHaveBeenCalled();
 });
