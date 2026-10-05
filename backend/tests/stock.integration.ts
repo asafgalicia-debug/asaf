@@ -1,3 +1,5 @@
+import {createAuditedDepartment} from '../src/modules/empresas/departmentService.js';
+import {getBranchModel} from '../src/modules/empresas/models/Branch.js';
 import {pageEmployeeOptions} from '../src/modules/recursos-humanos/employeeOptions.js';
 import {getUserModel} from '../src/modules/usuarios/models/User.js';
 import {getDepartmentModel} from '../src/modules/empresas/models/Department.js';
@@ -413,6 +415,22 @@ describe('stock against a real local MongoDB replica set', () => {
     for(const row of [...first.items,...next.items]){expect(row).not.toHaveProperty('passwordHash');expect(row).not.toHaveProperty('permissions');expect(row).not.toHaveProperty('email');expect(row).toMatchObject({companyId,branchId,isActive:true});}
     await getDepartmentModel().create([{_id:'department-a-'+randomUUID(),companyId,branchId,name:'Selector active',code:'A',status:'ACTIVE'},{_id:'department-b-'+randomUUID(),companyId,branchId,name:'Selector inactive',code:'B',status:'INACTIVE'}]);
     expect((await pageEmployeeOptions(companyId,branchId,'departments',{limit:20,search:'Selector'})).items).toHaveLength(1);
+  });
+
+  it('department creation commits audit together and rolls back audit failures',async()=>{
+    const {companyId,branchId,userId}=fixture;
+    await getBranchModel().create({_id:branchId,companyId,name:'Local test branch',code:'TEST',city:'Test',isActive:true});
+    const input={companyId,branchId,name:' Operations ',code:' ops '};
+    const audit=getAuditEventModel();const failure=vi.spyOn(audit,'create').mockRejectedValueOnce(new Error('audit failure'));
+    try{await expect(createAuditedDepartment(input,{userId})).rejects.toThrow('audit failure');}finally{failure.mockRestore();}
+    expect(await getDepartmentModel().countDocuments({companyId,branchId})).toBe(0);
+    const row=await createAuditedDepartment(input,{userId});expect(row).toMatchObject({companyId,branchId,name:'Operations',code:'OPS',status:'ACTIVE'});
+    expect(await audit.countDocuments({companyId,branchId,userId,module:'empresas.departamentos',entityId:row.id,action:'CREATE'})).toBe(1);
+    await expect(createAuditedDepartment(input,{userId})).rejects.toMatchObject({statusCode:409});
+    expect(await audit.countDocuments({companyId,branchId,module:'empresas.departamentos'})).toBe(1);
+    await expect(createAuditedDepartment({...input,companyId:'foreign'},{userId})).rejects.toMatchObject({statusCode:400});
+    await getBranchModel().updateOne({_id:branchId},{$set:{isActive:false}});
+    await expect(createAuditedDepartment({...input,code:'OTHER'},{userId})).rejects.toMatchObject({statusCode:400});
   });
 
 });

@@ -1,3 +1,5 @@
+import mongoose, {type ClientSession} from 'mongoose';
+import {getAuditEventModel} from '../auditoria/models/AuditEvent.js';
 import { randomUUID } from 'node:crypto';
 
 import { AppError } from '../../errors/AppError.js';
@@ -34,7 +36,7 @@ export async function listDepartments(companyId: string, branchId: string): Prom
   return rows.map((row) => serialize(row as DepartmentDocument));
 }
 
-export async function createDepartment(input: { companyId: string; branchId: string; name: string; code: string }): Promise<DepartmentRecord> {
+export async function createDepartment(input: { companyId: string; branchId: string; name: string; code: string }, session?: ClientSession): Promise<DepartmentRecord> {
   const companyId = input.companyId.trim();
   const branchId = input.branchId.trim();
   const name = input.name.trim();
@@ -42,12 +44,13 @@ export async function createDepartment(input: { companyId: string; branchId: str
   if (!companyId || !branchId || !name || !code || name.length > 120 || code.length > 32) {
     throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid department data', friendlyMessage: 'Completa empresa, sucursal, nombre y c\u00f3digo v\u00e1lidos.', statusCode: 400 });
   }
-  const branch = await getBranchModel().exists({ _id: branchId, companyId, isActive: true });
+  const branch = await getBranchModel().exists({ _id: branchId, companyId, isActive: true }).session(session ?? null);
   if (!branch) {
     throw new AppError({ code: 'VALIDATION_ERROR', message: 'Branch does not belong to the company or is inactive', friendlyMessage: 'La sucursal no existe, est\u00e1 inactiva o no pertenece a la empresa.', statusCode: 400 });
   }
   try {
-    const row = await getDepartmentModel().create({ _id: `department-${randomUUID()}`, companyId, branchId, name, code, status: 'ACTIVE' });
+    const value = { _id: `department-${randomUUID()}`, companyId, branchId, name, code, status: 'ACTIVE' as const };
+    const row = session ? (await getDepartmentModel().create([value], {session}))[0] : await getDepartmentModel().create(value);
     return serialize(row.toObject() as DepartmentDocument);
   } catch (error) {
     if (isDuplicateKey(error)) {
@@ -55,4 +58,17 @@ export async function createDepartment(input: { companyId: string; branchId: str
     }
     throw error;
   }
+}
+
+export async function createAuditedDepartment(input: Parameters<typeof createDepartment>[0], context: {userId: string; ipAddress?: string}) {
+  if (!context.userId.trim()) throw new AppError({code:'UNAUTHORIZED',message:'Missing department audit actor',friendlyMessage:'La sesión no tiene un usuario activo.',statusCode:401});
+  await Promise.all([getDepartmentModel().init(),getAuditEventModel().init()]);
+  const session = await mongoose.startSession();
+  try {
+    return await session.withTransaction(async () => {
+      const row = await createDepartment(input,session);
+      await getAuditEventModel().create([{companyId:row.companyId,branchId:row.branchId,userId:context.userId,action:'CREATE',module:'empresas.departamentos',entityId:row.id,details:{code:row.code},ipAddress:context.ipAddress}],{session});
+      return row;
+    });
+  } finally { await session.endSession(); }
 }

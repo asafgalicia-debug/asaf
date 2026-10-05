@@ -4,7 +4,7 @@ const state = vi.hoisted(() => ({ rows: [] as Array<Record<string, unknown>> }))
 type DepartmentQuery = { sort: () => DepartmentQuery; lean: () => DepartmentQuery; exec: () => Promise<Array<Record<string, unknown>>> };
 
 vi.mock('../src/modules/empresas/models/Branch.js', () => ({
-  getBranchModel: () => ({ exists: async (filter: { _id: string; companyId: string; isActive: boolean }) => filter._id === 'branch-test-01' && filter.companyId === 'company-test-01' && filter.isActive })
+  getBranchModel: () => ({ exists: (filter: { _id: string; companyId: string; isActive: boolean }) => ({session:async()=>filter._id === 'branch-test-01' && filter.companyId === 'company-test-01' && filter.isActive}) })
 }));
 
 vi.mock('../src/modules/empresas/models/Department.js', () => ({

@@ -1,10 +1,11 @@
+import {z} from 'zod';
 import { Router, type Request } from 'express';
 
 import { AppError } from '../../errors/AppError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
-import { createDepartment, listDepartments } from './departmentService.js';
+import { createAuditedDepartment, listDepartments } from './departmentService.js';
 
 function getTenantScope(req: Request): { companyId: string; branchId: string } {
   const companyId = req.tenant?.companyId?.trim();
@@ -28,11 +29,13 @@ export function createDepartmentRoutes(): Router {
   router.post('/', authenticate, tenant, authorize('usuarios.editar'), async (req, res, next) => {
     try {
       const { companyId, branchId } = getTenantScope(req);
-      const { name, code } = req.body ?? {};
-      if (typeof name !== 'string' || typeof code !== 'string') {
+      const parsed = z.object({name:z.string().trim().min(1).max(120),code:z.string().trim().min(1).max(32)}).strict().safeParse(req.body);
+      if (!parsed.success) {
         throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid department input', friendlyMessage: 'Indica el nombre y c\u00f3digo del departamento.', statusCode: 400 });
       }
-      const created = await createDepartment({ companyId, branchId, name, code });
+      const userId = req.tenant?.userId;
+      if (!userId) throw new AppError({code:'UNAUTHORIZED',message:'Missing audit actor',friendlyMessage:'La sesión no tiene un usuario activo.',statusCode:401});
+      const created = await createAuditedDepartment({ companyId, branchId, ...parsed.data },{userId,ipAddress:req.ip});
       res.status(201).json({ ok: true, data: created });
     } catch (error) {
       next(error);
