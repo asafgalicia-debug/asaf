@@ -1,3 +1,5 @@
+import {getEmployeeModel} from '../src/modules/recursos-humanos/models/Employee.js';
+import {pageEmployees} from '../src/modules/recursos-humanos/employeeService.js';
 import {pageAuditEventsForTenant} from '../src/audit/auditLogger.js';
 import {createAuditedSale,createAuditedPurchaseOrder,updateAuditedSaleStatus,updateAuditedPurchaseOrderStatus} from '../src/core/commercialCreation.js';
 import {createSale} from '../src/modules/ventas/saleService.js';
@@ -377,6 +379,14 @@ describe('stock against a real local MongoDB replica set', () => {
     const second=await pageAuditEventsForTenant(fixture.companyId,fixture.branchId,{limit:2,module:'ventas',action:'CREATE',cursor:first.nextCursor!});expect(second.items).toHaveLength(1);expect(second.nextCursor).toBeNull();
     expect(new Set([...first.items,...second.items].map(r=>r.id)).size).toBe(3);
     for(const row of [...first.items,...second.items])expect(row).toMatchObject({companyId:fixture.companyId,branchId:fixture.branchId,module:'ventas',action:'CREATE'});
+  });
+
+  it('employee pages filter active staff and isolate company and branch',async()=>{
+    const common={companyId:fixture.companyId,branchId:fixture.branchId,departmentId:'department',fullName:'Ana Test',position:'Operations',status:'ACTIVE'};
+    await getEmployeeModel().create([{...common,userId:'one'},{...common,userId:'two'},{...common,userId:'three'},{...common,userId:'inactive',status:'INACTIVE'},{...common,userId:'foreign-branch',branchId:'foreign'},{...common,userId:'foreign-company',companyId:'foreign'}]);
+    const first=await pageEmployees(fixture.companyId,fixture.branchId,{limit:2,search:'Ana',status:'ACTIVE'});expect(first.items).toHaveLength(2);expect(first.nextCursor).toBeTruthy();
+    const last=await pageEmployees(fixture.companyId,fixture.branchId,{limit:2,search:'Ana',status:'ACTIVE',cursor:first.nextCursor!});expect(last.items).toHaveLength(1);expect(last.nextCursor).toBeNull();expect(new Set([...first.items,...last.items].map(r=>r.id)).size).toBe(3);
+    for(const row of [...first.items,...last.items])expect(row).toMatchObject({companyId:fixture.companyId,branchId:fixture.branchId,status:'ACTIVE'});
   });
 
 });

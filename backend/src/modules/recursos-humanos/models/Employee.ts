@@ -7,5 +7,6 @@ const schema = new Schema<EmployeeDocument>({
 }, { timestamps: true });
 schema.index({ companyId: 1, userId: 1 }, { unique: true });
 schema.index({ companyId: 1, branchId: 1, departmentId: 1, status: 1 });
+schema.index({companyId:1,branchId:1,_id:-1});
 let model: Model<EmployeeDocument> | undefined;
 export function getEmployeeModel(): Model<EmployeeDocument> { if (!model) model = mongoose.models.Employee ?? mongoose.model<EmployeeDocument>('Employee', schema); return model; }

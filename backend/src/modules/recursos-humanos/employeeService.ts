@@ -1,3 +1,4 @@
+import {catalogFilter,catalogSlice,type CatalogQuery} from '../../core/catalogPagination.js';
 import { AppError } from '../../errors/AppError.js';
 import { getUserModel } from '../usuarios/models/User.js';
 import { getEmployeeModel, type EmployeeStatus } from './models/Employee.js';
@@ -10,4 +11,8 @@ export async function createEmployee(input: { companyId: string; branchId: strin
     const row = await getEmployeeModel().create({ ...input, fullName: input.fullName.trim(), position: input.position.trim(), status: 'ACTIVE' });
     return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, departmentId: row.departmentId, userId: row.userId, fullName: row.fullName, position: row.position, status: row.status };
   } catch (error) { if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: number }).code === 11000) throw new AppError({ code: 'CONFLICT', message: 'Employee already linked to user', friendlyMessage: 'Ese usuario ya tiene un registro de empleado.', statusCode: 409 }); throw error; }
+}
+export async function pageEmployees(companyId:string,branchId:string,query:CatalogQuery){
+ const filter=catalogFilter({companyId,branchId},query,['fullName','position']);
+ const rows=await getEmployeeModel().find(filter).sort({_id:-1}).limit(query.limit+1).lean().exec();return catalogSlice(rows,query.limit);
 }
