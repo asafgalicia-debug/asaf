@@ -1,5 +1,16 @@
+import {DemoCompanyPanel} from './DemoCompanyPanel';
+import {EmployeePanel} from './EmployeePanel';
+import {AuditPanel} from './AuditPanel';
+import {InventoryAlerts} from './InventoryAlerts';
+import {PeriodReport} from './PeriodReport';
+import {SummaryPanel} from './SummaryPanel';
 import React, { useEffect, useState, type FormEvent } from 'react';
 import ReactDOM from 'react-dom/client';
+import { CatalogDirectory } from './CatalogDirectory';
+import { TransactionDirectory } from './TransactionDirectory';
+import { TransactionCreate } from './TransactionCreate';
+import { FinancePanel } from './FinancePanel';
+import { StockPanel } from './StockPanel';
 
 type SessionUser = {
   id: string;
@@ -12,8 +23,13 @@ type SessionUser = {
 };
 
 type LoginResponse = { ok?: boolean; data?: { token?: string; user?: SessionUser }; error?: { message?: string } };
+type DashboardSummary = { sales: number; purchases: number; cash: number; employees: number; inventory: number };
+type SaleRecord = { id: string; customerId: string; productId: string; quantity: number; total: number; status: string };
+type WarehouseRecord = { id: string; name: string; code: string; status: string };
+type PurchaseOrderRecord = { id: string; supplierId: string; productId: string; quantity: number; total: number; status: string };
+type CustomerRecord = { id: string; name: string; taxId: string; email: string; status: string };
 type Theme = { mode: 'dark' | 'light'; accent: string; font: 'modern' | 'rounded' | 'mono' };
-type Page = 'dashboard' | 'sales' | 'inventory' | 'purchases' | 'customers' | 'finance' | 'reports';
+type Page = 'dashboard' | 'sales' | 'inventory' | 'purchases' | 'customers' | 'suppliers' | 'products' | 'finance' | 'reports' | 'audit' | 'employees';
 type TenantLabels = { company?: string; branch?: string };
 
 const themeStorageKey = 'nucleo-erp-theme-v1';
@@ -24,13 +40,27 @@ const fontStacks: Record<Theme['font'], string> = {
 };
 const defaultTheme: Theme = { mode: 'dark', accent: '#70e5ff', font: 'modern' };
 const apiBaseUrl = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/+$/, '');
+async function readList<T>(response: Response): Promise<T[]> {
+  if (response.status === 401) throw new Error('Tu sesión expiró. Cierra sesión y vuelve a entrar.');
+  if (response.status === 403) throw new Error('No tienes permiso para consultar este módulo.');
+  const result = await response.json();
+  if (!response.ok || !Array.isArray(result.data)) throw new Error(result.error?.message || 'No se pudieron cargar los registros.');
+  return result.data;
+}
+function listError(cause: unknown): string {
+  return cause instanceof TypeError ? 'No se pudo conectar con el servidor.' : cause instanceof Error ? cause.message : 'No se pudieron cargar los registros.';
+}
 const moduleItems: Array<{ id: Page; label: string; icon: string; detail: string }> = [
+  { id: 'suppliers', label: 'Proveedores', icon: '⇄', detail: 'Directorio de proveedores' },
+  { id: 'products', label: 'Productos', icon: '▦', detail: 'Catálogo de la empresa' },
   { id: 'dashboard', label: 'Centro de mando', icon: '◈', detail: 'Resumen de la operacion' },
   { id: 'sales', label: 'Ventas', icon: '↗', detail: 'Pedidos y clientes' },
   { id: 'inventory', label: 'Inventario', icon: '▦', detail: 'Existencias y almacenes' },
   { id: 'purchases', label: 'Compras', icon: '⇩', detail: 'Abastecimiento' },
   { id: 'customers', label: 'Clientes', icon: '◉', detail: 'Directorio comercial' },
   { id: 'finance', label: 'Finanzas', icon: '◇', detail: 'Cuentas y movimientos' },
+  {id:'employees',label:'Empleados',icon:'◉',detail:'Personal de la sucursal'},
+  { id:'audit',label:'Auditoría',icon:'◷',detail:'Eventos de la sucursal' },
   { id: 'reports', label: 'Analitica', icon: '⌁', detail: 'Informes del negocio' }
 ];
 
@@ -127,6 +157,10 @@ const styles = `
   .empty-analytics div { max-width: 300px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
   .empty-analytics strong { display: block; margin-bottom: 5px; font-size: 11px; }
   .empty-analytics span { color: var(--muted); font-size: 9px; line-height: 1.5; }
+  .data-list { display: grid; gap: 8px; }
+  .data-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .data-row strong { font-size: 11px; }
+  .data-row small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
   .check-list { display: grid; gap: 10px; }
   .check-row { display: flex; align-items: center; gap: 10px; padding: 11px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }
   .check-icon { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 8px; color: #62e7b1; background: rgba(98, 231, 177, .1); font-size: 12px; }
@@ -175,6 +209,7 @@ function loadTheme(): Theme {
 }
 
 function App() {
+  const [demoVisible,setDemoVisible]=useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [session, setSession] = useState<{ token: string; user: SessionUser } | null>(null);
   const [page, setPage] = useState<Page>('dashboard');
@@ -185,6 +220,10 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [warehouses, setWarehouses] = useState<WarehouseRecord[]>([]);
+  const [warehousesLoading, setWarehousesLoading] = useState(false);
+  const [moduleError, setModuleError] = useState('');
+  const [transactionRevision, setTransactionRevision] = useState(0);
 
   useEffect(() => {
     localStorage.setItem(themeStorageKey, JSON.stringify(theme));
@@ -204,6 +243,8 @@ function App() {
     }).catch(() => undefined);
     return () => controller.abort();
   }, [session]);
+
+
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -234,7 +275,7 @@ function App() {
   return (
     <div className="app-shell" data-mode={theme.mode} style={themeStyle}>
       <style>{styles}</style>
-      {!session ? (
+      {demoVisible ? <DemoCompanyPanel onClose={()=>setDemoVisible(false)}/> : !session ? (
         <main className="auth-layout">
           <section className="auth-visual">
             <div className="brand-lockup"><span className="brand-emblem">N</span><span>{'NUCLEO ERP SOFTWARE'}</span></div>
@@ -258,6 +299,7 @@ function App() {
                 {error && <div className="error-box" role="alert">{error}</div>}
                 <button className="primary-button login-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Validando acceso...' : 'Entrar al ERP'} <span aria-hidden="true">→</span></button>
               </form>
+              <button type="button" onClick={()=>setDemoVisible(true)}>Abrir empresa de demostración · 2,000 productos</button>
               <p className="security-note">La sesion se mantiene en memoria durante esta visita. Tus credenciales se validan con la API y no se guardan en este navegador.</p>
             </div>
           </section>
@@ -269,9 +311,9 @@ function App() {
             <div className="tenant-card"><span>Espacio activo</span><strong>{tenantLabels.company || session.user.companyId}</strong><strong>{tenantLabels.branch || session.user.branchId}</strong></div>
             <div className="nav-label">Workspace</div>
             <nav className="nav-list" aria-label="Modulos principales">
-              {moduleItems.map((item) => <button key={item.id} type="button" className={'nav-item' + (page === item.id ? ' active' : '')} onClick={() => { setPage(item.id); setMobileNavOpen(false); }}><span className="nav-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>)}
+              {moduleItems.filter(item=>(item.id!=='audit'||session.user.permissions.includes('auditoria.ver'))&&(item.id!=='employees'||session.user.permissions.includes('rrhh.ver'))).map((item) => <button key={item.id} type="button" className={'nav-item' + (page === item.id ? ' active' : '')} onClick={() => { setPage(item.id); setMobileNavOpen(false); }}><span className="nav-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>)}
             </nav>
-            <div className="sidebar-bottom">
+            <div className="sidebar-bottom"><button type="button" className="nav-item" onClick={()=>setDemoVisible(true)}>Empresa de demostración · 2,000 productos</button>
               <button className="nav-item" type="button" onClick={() => setSettingsOpen(true)}><span className="nav-icon" aria-hidden="true">⚙</span><span>Ajustes visuales</span></button>
               <button className="nav-item" type="button" onClick={() => { setSession(null); setPage('dashboard'); }}><span className="nav-icon" aria-hidden="true">↪</span><span>Cerrar sesion</span></button>
             </div>
@@ -282,21 +324,20 @@ function App() {
               <div className="top-actions"><div className="status-chip"><span className="status-dot" /> Sesion autenticada</div><button className="icon-button" type="button" aria-label="Abrir ajustes visuales" onClick={() => setSettingsOpen(true)}>⚙</button><div className="user-chip"><span className="user-avatar">{session.user.name.slice(0, 1).toUpperCase()}</span><span className="user-copy"><strong>{session.user.name}</strong><small>{session.user.email}</small></span></div></div>
             </header>
             <div className="page-heading"><div><div className="eyebrow">{activeModule.detail}</div><h1>{activeModule.label}</h1><p>Vista de trabajo de Nucleo ERP Software.</p></div><div className="date-chip">TENANT ACTIVO <span aria-hidden="true">·</span> {session.user.companyId}</div></div>
-            {page === 'dashboard' ? (
-              <>
-                <section className="welcome-banner"><div className="welcome-content"><div className="eyebrow">Centro de mando</div><h2>Todo conectado. Todo bajo control.</h2><p>Este panel mostrara la actividad real de los modulos habilitados para tu empresa.</p></div><div className="banner-mark" aria-hidden="true">◈</div></section>
-                <div className="section-heading"><h2>Estado de la plataforma</h2><span>Los indicadores se conectaran a datos reales del ERP</span></div>
-                <section className="metric-grid" aria-label="Indicadores del sistema">
-                  {[
-                    { label: 'Ventas', icon: '↗', caption: 'API de ventas pendiente' },
-                    { label: 'Inventario', icon: '▦', caption: 'API de inventario pendiente' },
-                    { label: 'Compras', icon: '⇩', caption: 'API de compras pendiente' },
-                    { label: 'Clientes', icon: '◉', caption: 'API de clientes pendiente' }
-                  ].map((item) => <article className="metric-card" key={item.label}><div className="metric-top"><span>{item.label}</span><span className="metric-symbol">{item.icon}</span></div><div className="metric-value">—</div><div className="metric-caption">{item.caption}</div></article>)}
-                </section>
-                <section className="content-grid"><article className="panel"><div className="panel-title"><h3>Actividad de la empresa</h3><span>DATOS EN TIEMPO REAL</span></div><div className="empty-analytics"><div><strong>Esperando conexion de datos</strong><span>Las graficas apareceran cuando conectemos los servicios ERP a este panel.</span></div></div></article><article className="panel"><div className="panel-title"><h3>Contexto de sesion</h3><span>TENANT</span></div><div className="check-list"><div className="check-row"><span className="check-icon">✓</span><span><strong>Autenticacion activa</strong><small>Token recibido desde la API</small></span></div><div className="check-row"><span className="check-icon">✓</span><span><strong>Empresa</strong><small>{tenantLabels.company || session.user.companyId}</small></span></div><div className="check-row"><span className="check-icon">✓</span><span><strong>Sucursal</strong><small>{tenantLabels.branch || session.user.branchId}</small></span></div></div></article></section>
-              </>
-            ) : (
+            {(page === 'sales' || page === 'purchases') && session.user.permissions.includes('usuarios.editar') && <TransactionCreate key={page + session.user.id} kind={page === 'sales' ? 'sales' : 'purchase-orders'} apiUrl={apiBaseUrl} token={session.token} onCreated={() => setTransactionRevision((value) => value + 1)} />}
+            {page === 'inventory' && <StockPanel key={session.user.id} apiUrl={apiBaseUrl} token={session.token} canCreate={session.user.permissions.includes('usuarios.editar')} onWarehouseCreated={() => setTransactionRevision((value) => value + 1)} />}
+            {page === 'inventory' && <InventoryAlerts base={apiBaseUrl} token={session.token} companyId={session.user.companyId} canConfigure={session.user.permissions.includes('configuracion.ver')} canEdit={session.user.permissions.includes('usuarios.editar')}/>}
+            {page === 'customers' || page === 'suppliers' || page === 'products' ? (
+              <CatalogDirectory companyId={session.user.companyId} branchId={session.user.branchId} key={page + session.user.id} kind={page} apiUrl={apiBaseUrl} token={session.token} canCreate={session.user.permissions.includes('usuarios.editar')} />
+            ) : page === 'sales' || page === 'purchases' ? (
+              <TransactionDirectory key={page+session.user.id} apiUrl={apiBaseUrl} token={session.token} kind={page==='sales'?'sales':'purchase-orders'} canEdit={session.user.permissions.includes('usuarios.editar')} externalRevision={transactionRevision} companyId={session.user.companyId} branchId={session.user.branchId}/>
+            ) : page === 'finance' ? (
+              <FinancePanel key={session.user.id} apiUrl={apiBaseUrl} token={session.token} canCreate={session.user.permissions.includes('usuarios.editar')}/>
+            ) : moduleError && ['sales', 'purchases', 'inventory'].includes(page) ? (
+              <section className="panel"><p className="error-box" role="alert">{moduleError}</p></section>
+            ) : page === 'dashboard' || page === 'reports' ? (
+              <>{page==='reports'&&<PeriodReport apiUrl={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/>}<SummaryPanel key={page+session.user.id} apiUrl={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} report={page==='reports'}/></>
+            ) : page === 'employees' ? session.user.permissions.includes('rrhh.ver') ? <EmployeePanel canEdit={session.user.permissions.includes('rrhh.editar')} key={session.token} canManageDepartments={session.user.permissions.includes('usuarios.editar')} canCreate={session.user.permissions.includes('rrhh.crear')} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar empleados.</p> : page === 'audit' ? session.user.permissions.includes('auditoria.ver') ? <AuditPanel base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar auditoría.</p> : page === 'inventory' ? null : (
               <section className="module-placeholder"><div><div className="module-placeholder-mark">{activeModule.icon}</div><h2>{activeModule.label}</h2><p>{activeModule.detail}. Esta pantalla es parte de la interfaz objetivo; conectaremos aqui los endpoints y datos reales del modulo en las siguientes etapas.</p><span className="status-chip"><span className="status-dot" /> Interfaz preparada para integracion</span></div></section>
             )}
           </main>

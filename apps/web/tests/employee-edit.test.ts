@@ -1,0 +1,7 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {editEmployee} from '../src/employeeEditApi';
+const original={id:'a'.repeat(24),companyId:'co',branchId:'br',userId:'u',departmentId:'d',fullName:'Old Name',position:'Old Role',status:'ACTIVE' as const};
+test('employee edits send original snapshot and confirm preserved links',async t=>{const old=globalThis.fetch;t.after(()=>{globalThis.fetch=old;});
+globalThis.fetch=async(url,init)=>{assert.equal(String(url),'https://test/employees/'+original.id);assert.equal(init?.method,'PATCH');assert.deepEqual(JSON.parse(String(init?.body)),{fullName:'New Name',position:'New Role',expected:{fullName:'Old Name',position:'Old Role'}});return new Response(JSON.stringify({data:{...original,fullName:'New Name',position:'New Role'}}));};assert.equal((await editEmployee('https://test','token',original,' New Name ',' New Role ')).position,'New Role');
+for(const change of [{branchId:'foreign'},{userId:'other'},{departmentId:'other'},{status:'INACTIVE'},{fullName:'Unexpected'}]){globalThis.fetch=async()=>new Response(JSON.stringify({data:{...original,fullName:'New Name',position:'New Role',...change}}));await assert.rejects(editEmployee('https://test','token',original,'New Name','New Role'));}
+globalThis.fetch=async()=>new Response('',{status:409});await assert.rejects(editEmployee('https://test','token',original,'New Name','New Role'),(e:any)=>e.status===409&&e.message.includes('actualiza'));
+});

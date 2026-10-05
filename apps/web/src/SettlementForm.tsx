@@ -1,0 +1,13 @@
+import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {WarehouseSelector} from './WarehouseSelector';
+import {AccountSelector} from './AccountSelector';
+import type {WarehouseEntry} from './inventoryApi';
+import type {FinanceAccount} from './financeApi';
+import type {Transaction,TransactionKind} from './transactionApi';
+import {settlementRequest} from './settlementApi';
+export function SettlementForm({apiUrl,token,kind,row,companyId,branchId,onDone,onCancel}:{apiUrl:string;token:string;kind:TransactionKind;row:Transaction;companyId:string;branchId:string;onDone:(id:string)=>void;onCancel:()=>void}){
+ const [warehouse,setWarehouse]=useState<WarehouseEntry|null>(null),[account,setAccount]=useState<FinanceAccount|null>(null),[date,setDate]=useState(new Date().toISOString().slice(0,10)),[saving,setSaving]=useState(false),[error,setError]=useState('');const write=useRef<AbortController|null>(null);
+ useEffect(()=>()=>write.current?.abort(),[]);
+ async function submit(e:FormEvent){e.preventDefault();if(write.current||!warehouse||!account)return;if(!window.confirm(`${kind==='sales'?'Cobrar y entregar venta':'Recibir y pagar compra'} ${row.id}. Cantidad: ${row.quantity}. Importe: ${row.total} (moneda no informada). Almacén: ${warehouse.name}. Cuenta: ${account.name}. Fecha: ${date}. Se registran inventario y caja juntos. Confirma que no has registrado manualmente estos movimientos.`))return;const c=new AbortController();write.current=c;setSaving(true);setError('');try{const id=await settlementRequest(apiUrl,token,kind,row,{warehouseId:warehouse.id,accountId:account.id,date},{companyId,branchId},c.signal);if(!c.signal.aborted)onDone(id);}catch(e){if(!c.signal.aborted)setError(e instanceof Error?e.message:'No se pudo confirmar.');}finally{write.current=null;if(!c.signal.aborted)setSaving(false);}}
+ return <section className="panel"><h3>{kind==='sales'?'Cobrar y entregar':'Recibir y pagar'}</h3><p>Documento: {row.id} · Cantidad: {row.quantity} · Total: {row.total}</p><WarehouseSelector apiUrl={apiUrl} token={token} label="Almacén de la operación" selected={warehouse} disabled={saving} onSelect={setWarehouse}/><AccountSelector apiUrl={apiUrl} token={token} label="Cuenta de caja" selected={account} disabled={saving} onSelect={setAccount}/><form onSubmit={e=>void submit(e)}><fieldset disabled={saving}><label htmlFor="settlement-date">Fecha del movimiento de caja</label><input id="settlement-date" type="date" required value={date} onChange={e=>setDate(e.target.value)}/><button disabled={!warehouse||!account} type="submit">{saving?'Registrando…':'Revisar y registrar operación conjunta'}</button><button type="button" onClick={onCancel}>Cancelar</button></fieldset></form>{error&&<p role="alert">{error}</p>}</section>;
+}

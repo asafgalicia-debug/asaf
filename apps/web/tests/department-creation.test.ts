@@ -1,0 +1,6 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {saveDepartment} from '../src/departmentCreationApi';
+test('department creation normalizes code and confirms exact scoped result',async t=>{const old=globalThis.fetch;t.after(()=>{globalThis.fetch=old;});const row={id:'department-12345678-1234-1234-1234-123456789abc',name:'Operations',code:'OPS',companyId:'co',branchId:'br',status:'ACTIVE'};
+globalThis.fetch=async(url,init)=>{assert.equal(String(url),'https://test/departments');assert.deepEqual(JSON.parse(String(init?.body)),{name:'Operations',code:'OPS'});return new Response(JSON.stringify({data:row}));};assert.equal((await saveDepartment('https://test','token','co','br',' Operations ',' ops ')).code,'OPS');
+for(const change of [{branchId:'foreign'},{status:'INACTIVE'},{code:'OTHER'},{id:'invalid'}]){globalThis.fetch=async()=>new Response(JSON.stringify({data:{...row,...change}}));await assert.rejects(saveDepartment('https://test','token','co','br','Operations','OPS'));}
+globalThis.fetch=async()=>new Response('',{status:409});await assert.rejects(saveDepartment('https://test','token','co','br','Operations','OPS'),(e:any)=>e.status===409&&e.message.includes('departamento'));
+});
