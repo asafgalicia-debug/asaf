@@ -1,3 +1,6 @@
+import {getUserModel} from '../src/modules/usuarios/models/User.js';
+import {getDepartmentModel} from '../src/modules/empresas/models/Department.js';
+import {createAuditedEmployee} from '../src/modules/recursos-humanos/employeeService.js';
 import {getEmployeeModel} from '../src/modules/recursos-humanos/models/Employee.js';
 import {pageEmployees} from '../src/modules/recursos-humanos/employeeService.js';
 import {pageAuditEventsForTenant} from '../src/audit/auditLogger.js';
@@ -387,6 +390,18 @@ describe('stock against a real local MongoDB replica set', () => {
     const first=await pageEmployees(fixture.companyId,fixture.branchId,{limit:2,search:'Ana',status:'ACTIVE'});expect(first.items).toHaveLength(2);expect(first.nextCursor).toBeTruthy();
     const last=await pageEmployees(fixture.companyId,fixture.branchId,{limit:2,search:'Ana',status:'ACTIVE',cursor:first.nextCursor!});expect(last.items).toHaveLength(1);expect(last.nextCursor).toBeNull();expect(new Set([...first.items,...last.items].map(r=>r.id)).size).toBe(3);
     for(const row of [...first.items,...last.items])expect(row).toMatchObject({companyId:fixture.companyId,branchId:fixture.branchId,status:'ACTIVE'});
+  });
+
+  it('employee creation validates department scope and rolls back audit failures',async()=>{
+    const user=await getUserModel().create({companyId:fixture.companyId,branchId:fixture.branchId,email:'employee-'+randomUUID()+'@example.test',passwordHash:'isolated-test-placeholder',name:'Test employee',roleId:'test',isActive:true});
+    const departmentId='department-'+randomUUID();await getDepartmentModel().create({_id:departmentId,companyId:fixture.companyId,branchId:fixture.branchId,name:'Operations',code:'OPS',status:'ACTIVE'});
+    const input={companyId:fixture.companyId,branchId:fixture.branchId,userId:String(user._id),departmentId,fullName:'Employee',position:'Operations'};
+    for(const change of [{branchId:'foreign'},{status:'INACTIVE'}]){await getDepartmentModel().updateOne({_id:departmentId},{$set:change});await expect(createAuditedEmployee(input,{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});await getDepartmentModel().updateOne({_id:departmentId},{$set:{branchId:fixture.branchId,status:'ACTIVE'}});}
+    const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Employee audit failure'));
+    try{await expect(createAuditedEmployee(input,{userId:fixture.userId})).rejects.toThrow('Employee audit failure');}finally{spy.mockRestore();}
+    expect(await getEmployeeModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+    const row=await createAuditedEmployee(input,{userId:fixture.userId});expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id,module:'rrhh'})).toBe(1);
+    await expect(createAuditedEmployee(input,{userId:fixture.userId})).rejects.toMatchObject({statusCode:409});expect(await getEmployeeModel().countDocuments({companyId:fixture.companyId})).toBe(1);
   });
 
 });
