@@ -1,4 +1,4 @@
-import {getModuleConfigModel,listModuleConfigs,getModuleConfig} from '../src/modules/configuracion/configService.js';
+import {getModuleConfigModel,listModuleConfigs,getModuleConfig,updateInventoryConfig} from '../src/modules/configuracion/configService.js';
 import {getAuditEventModel} from '../src/modules/auditoria/models/AuditEvent.js';
 import {settleCommercial,getSettlementModel,findCommercialSettlement} from '../src/modules/ventas/commercialSettlement.js';
 import {getSaleModel} from '../src/modules/ventas/models/Sale.js';
@@ -193,6 +193,20 @@ describe('stock against a real local MongoDB replica set', () => {
     }finally{await session.endSession();}
     expect(await quantityAt(fixture.warehouseId)).toBe(7);
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'commercial-commit'})).toBe(1);
+  });
+  it('inventory preference updates reject stale versions and audit once per confirmed save',async()=>{
+    const first=await updateInventoryConfig(fixture,{expectedVersion:null,stockAlertThreshold:10});expect(first.version).toBe(1);
+    await getModuleConfigModel().updateOne({companyId:fixture.companyId,module:'inventario'},{$set:{'config.existingPreference':'keep'}});
+    await expect(updateInventoryConfig(fixture,{expectedVersion:null,stockAlertThreshold:20})).rejects.toMatchObject({statusCode:409});
+    const results=await Promise.allSettled([updateInventoryConfig(fixture,{expectedVersion:1,stockAlertThreshold:20}),updateInventoryConfig(fixture,{expectedVersion:1,stockAlertThreshold:30})]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+    const saved=await getModuleConfig(fixture.companyId,'inventario');expect(saved.version).toBe(2);expect(saved.config.existingPreference).toBe('keep');
+    expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'configuracion'})).toBe(2);
+    await expect(updateInventoryConfig(fixture,{expectedVersion:2,stockAlertThreshold:10,companyId:'foreign'})).rejects.toMatchObject({statusCode:400});
+  });
+  it('configuration audit failure leaves no saved preference',async()=>{
+    const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Config audit failure'));
+    try{await expect(updateInventoryConfig(fixture,{expectedVersion:null,stockAlertThreshold:10})).rejects.toThrow('Config audit failure');}finally{spy.mockRestore();}
+    expect(await getModuleConfigModel().countDocuments({companyId:fixture.companyId})).toBe(0);
   });
   it('module configuration persists with company isolation and a unique module',async()=>{
     const model=getModuleConfigModel();await model.init();

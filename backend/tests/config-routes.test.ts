@@ -1,0 +1,17 @@
+import {beforeAll,afterAll,beforeEach,it,expect,vi} from 'vitest';
+import express from 'express';
+import type {Server} from 'node:http';
+import type {AddressInfo} from 'node:net';
+const state=vi.hoisted(()=>({update:vi.fn()}));
+vi.mock('../src/modules/configuracion/configService.js',()=>({listModuleConfigs:vi.fn(),getModuleConfig:vi.fn(),updateInventoryConfig:state.update}));
+vi.mock('../src/middleware/authenticate.js',()=>({authenticate:(req:any,res:any,next:any)=>req.headers.authorization?next():res.sendStatus(401)}));
+vi.mock('../src/middleware/tenant.js',()=>({tenant:(req:any,_:any,next:any)=>{req.tenant={companyId:'co',branchId:'br',userId:'user'};next();}}));
+vi.mock('../src/middleware/authorize.js',()=>({authorize:(permission:string)=>(req:any,res:any,next:any)=>{const auth=req.headers.authorization;const permissions=auth==='Bearer write'?['configuracion.ver','usuarios.editar']:auth==='Bearer read'?['configuracion.ver']:['usuarios.editar'];permissions.includes(permission)?next():res.sendStatus(403);}}));
+import {createConfigRoutes} from '../src/modules/configuracion/configRoutes.js';
+let server:Server,base:string;
+beforeAll(async()=>{const app=express();app.use(express.json());app.use('/config',createConfigRoutes());app.use((e:any,_:any,res:any,__:any)=>res.status(e.statusCode??500).json({error:e.code}));server=app.listen(0);await new Promise<void>(r=>server.once('listening',r));base='http://127.0.0.1:'+(server.address() as AddressInfo).port;});
+afterAll(()=>new Promise<void>(r=>server.close(()=>r())));beforeEach(()=>{state.update.mockReset();});
+const body={expectedVersion:null,stockAlertThreshold:10};
+const put=(auth:string)=>fetch(base+'/config/inventario',{method:'PUT',headers:{'Content-Type':'application/json',...(auth?{Authorization:auth}:{})},body:JSON.stringify(body)});
+it('configuration writes require both configuration read and edit permissions',async()=>{expect((await put('')).status).toBe(401);expect((await put('Bearer read')).status).toBe(403);expect((await put('Bearer edit-only')).status).toBe(403);expect(state.update).not.toHaveBeenCalled();});
+it('configuration writes use complete session scope and propagate conflicts',async()=>{state.update.mockResolvedValue({version:1});expect((await put('Bearer write')).status).toBe(200);expect(state.update).toHaveBeenCalledWith({companyId:'co',branchId:'br',userId:'user'},body);state.update.mockRejectedValue({statusCode:409,code:'CONFLICT'});expect((await put('Bearer write')).status).toBe(409);});
