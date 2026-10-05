@@ -8,7 +8,7 @@ vi.mock('../src/middleware/tenant.js', () => ({ tenant: (req: any, _: any, next:
 vi.mock('../src/middleware/authorize.js', () => ({ authorize: (permission: string) => (req: any, res: any, next: any) => ['usuarios.ver','usuarios.editar'].includes(permission) && req.headers.authorization === 'Bearer editor' ? next() : res.sendStatus(403) }));
 vi.mock('../src/audit/auditLogger.js', () => ({ logAuditEvent: state.audit }));
 vi.mock('../src/modules/finanzas/bankAccountService.js',()=>({pageBankAccounts:state.update,createBankAccount:vi.fn(),listBankAccounts:vi.fn()}));
-vi.mock('../src/modules/finanzas/cashMovementService.js',()=>({pageCashMovements:state.update,createCashMovement:state.create,listCashMovements:vi.fn()}));
+vi.mock('../src/modules/finanzas/cashMovementService.js',()=>({pageCashMovements:state.update,createAuditedCashMovement:state.create,listCashMovements:vi.fn()}));
 import {createBankAccountRoutes} from '../src/modules/finanzas/bankAccountRoutes.js';
 import {createCashMovementRoutes} from '../src/modules/finanzas/cashMovementRoutes.js';
 let server: Server; let base: string; const id = 'a'.repeat(24);
@@ -32,4 +32,10 @@ it('cash writes reject nonexistent dates, fractional cents, overflow and tenant 
   const response=await fetch(base+'/cash-movements',{method:'POST',headers:{Authorization:'Bearer editor','Content-Type':'application/json'},body:JSON.stringify(value)});expect(response.status).toBe(400);
  }
  expect(state.create).not.toHaveBeenCalled();
+});
+
+it('cash writes pass the authenticated audit user into atomic persistence', async()=>{
+ state.create.mockReset();state.create.mockResolvedValue({id});
+ const response=await fetch(base+'/cash-movements',{method:'POST',headers:{Authorization:'Bearer editor','Content-Type':'application/json'},body:JSON.stringify({accountId:id,concept:'Cash test',type:'INFLOW',amount:1,date:'2026-10-04'})});
+ expect(response.status).toBe(201);expect(state.create).toHaveBeenCalledWith(expect.objectContaining({companyId:'co',branchId:'br'}),expect.objectContaining({userId:'user'}));expect(state.audit).not.toHaveBeenCalled();
 });

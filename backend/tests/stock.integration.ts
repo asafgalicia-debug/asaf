@@ -6,7 +6,7 @@ import {getPurchaseOrderModel} from '../src/modules/compras/models/PurchaseOrder
 import {recordCommercialStock} from '../src/modules/inventario/stockService.js';
 import {getBankAccountModel,getCashMovementModel} from '../src/modules/finanzas/models/FinanceModels.js';
 import {pageBankAccounts,createBankAccount} from '../src/modules/finanzas/bankAccountService.js';
-import {pageCashMovements,createCashMovement} from '../src/modules/finanzas/cashMovementService.js';
+import {pageCashMovements,createCashMovement,createAuditedCashMovement} from '../src/modules/finanzas/cashMovementService.js';
 import { getCategoryModel } from '../src/modules/productos/models/Category.js';
 import { updateCategoryCode } from '../src/modules/productos/categoryService.js';
 import { updateWarehouseCode } from '../src/modules/inventario/warehouseService.js';
@@ -275,4 +275,16 @@ describe('stock against a real local MongoDB replica set', () => {
     expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:String(order._id),module:'compras'})).toBe(1);
     await expect(settleCommercial({...fixture,branchId:'foreign'},input)).rejects.toMatchObject({statusCode:409});
   });
+  it('manual cash movement and audit commit together and roll back on audit failure', async()=>{
+    const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'MANUAL',status:'ACTIVE'});
+    const input={companyId:fixture.companyId,branchId:fixture.branchId,accountId:String(account._id),concept:'Manual cash',type:'INFLOW' as const,amount:12.34,date:'2026-10-04'};
+    const row=await createAuditedCashMovement(input,{userId:fixture.userId});
+    expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id,module:'finanzas.movimientos'})).toBe(1);
+    const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Manual audit failure'));
+    try{await expect(createAuditedCashMovement({...input,concept:'Must roll back'},{userId:fixture.userId})).rejects.toThrow('Manual audit failure');}finally{spy.mockRestore();}
+    expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId})).toBe(1);
+    await expect(createAuditedCashMovement({...input,branchId:'foreign'},{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});
+    expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId})).toBe(1);
+  });
+
 });
