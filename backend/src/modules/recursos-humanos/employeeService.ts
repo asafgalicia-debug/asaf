@@ -31,3 +31,14 @@ export async function createAuditedEmployee(input:Parameters<typeof createEmploy
   await audit.create([{companyId:input.companyId,branchId:input.branchId,userId:context.userId,action:'CREATE',module:'rrhh',entityId:row.id,details:{departmentId:row.departmentId,linkedUserId:row.userId},ipAddress:context.ipAddress}],{session});return row;
  });}finally{await session.endSession();}
 }
+
+export async function updateAuditedEmployee(input:{companyId:string;branchId:string;id:string;fullName:string;position:string;expected:{fullName:string;position:string}},context:{userId:string;ipAddress?:string}){
+ if(!context.userId.trim())throw new AppError({code:'UNAUTHORIZED',message:'Missing employee audit actor',friendlyMessage:'La sesión no tiene un usuario activo.',statusCode:401});
+ const model=getEmployeeModel(),audit=getAuditEventModel();await Promise.all([model.init(),audit.init()]);const session=await mongoose.startSession();
+ try{return await session.withTransaction(async()=>{
+  const row=await model.findOneAndUpdate({_id:input.id,companyId:input.companyId,branchId:input.branchId,fullName:input.expected.fullName,position:input.expected.position},{$set:{fullName:input.fullName.trim(),position:input.position.trim()}},{new:true,runValidators:true,session}).lean().exec();
+  if(!row)throw new AppError({code:'CONFLICT',message:'Employee missing or concurrently changed',friendlyMessage:'El empleado cambió o ya no está disponible. Actualiza antes de editar.',statusCode:409});
+  await audit.create([{companyId:input.companyId,branchId:input.branchId,userId:context.userId,action:'UPDATE',module:'rrhh',entityId:String(row._id),details:{fields:['fullName','position']},ipAddress:context.ipAddress}],{session});
+  return {id:String(row._id),companyId:row.companyId,branchId:row.branchId,departmentId:row.departmentId,userId:row.userId,fullName:row.fullName,position:row.position,status:row.status};
+ });}finally{await session.endSession();}
+}

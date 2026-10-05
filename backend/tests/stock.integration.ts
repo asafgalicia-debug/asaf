@@ -1,3 +1,4 @@
+import {updateAuditedEmployee} from '../src/modules/recursos-humanos/employeeService.js';
 import {createAuditedDepartment} from '../src/modules/empresas/departmentService.js';
 import {getBranchModel} from '../src/modules/empresas/models/Branch.js';
 import {pageEmployeeOptions} from '../src/modules/recursos-humanos/employeeOptions.js';
@@ -431,6 +432,20 @@ describe('stock against a real local MongoDB replica set', () => {
     await expect(createAuditedDepartment({...input,companyId:'foreign'},{userId})).rejects.toMatchObject({statusCode:400});
     await getBranchModel().updateOne({_id:branchId},{$set:{isActive:false}});
     await expect(createAuditedDepartment({...input,code:'OTHER'},{userId})).rejects.toMatchObject({statusCode:400});
+  });
+
+  it('employee edits use original values and roll back when audit fails',async()=>{
+    const {companyId,branchId,userId}=fixture;
+    const employee=await getEmployeeModel().create({companyId,branchId,userId:'linked-user',departmentId:'dept',fullName:'Original Name',position:'Original Role',status:'ACTIVE'});
+    const input={companyId,branchId,id:String(employee._id),fullName:'Updated Name',position:'Updated Role',expected:{fullName:'Original Name',position:'Original Role'}};
+    const audit=getAuditEventModel(),failure=vi.spyOn(audit,'create').mockRejectedValueOnce(new Error('audit failure'));
+    try{await expect(updateAuditedEmployee(input,{userId})).rejects.toThrow('audit failure');}finally{failure.mockRestore();}
+    expect(await getEmployeeModel().findById(employee._id).lean()).toMatchObject(input.expected);
+    await expect(updateAuditedEmployee({...input,branchId:'foreign'},{userId})).rejects.toMatchObject({statusCode:409});
+    const results=await Promise.allSettled([updateAuditedEmployee(input,{userId}),updateAuditedEmployee({...input,fullName:'Concurrent Name'},{userId})]);
+    expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(results.filter(r=>r.status==='rejected')).toHaveLength(1);
+    expect(await audit.countDocuments({companyId,branchId,module:'rrhh',action:'UPDATE',entityId:String(employee._id)})).toBe(1);
+    expect(await getEmployeeModel().findById(employee._id).lean()).toMatchObject({userId:'linked-user',departmentId:'dept',status:'ACTIVE'});
   });
 
 });
