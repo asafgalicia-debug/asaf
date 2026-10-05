@@ -42,4 +42,3 @@ export async function catalogServerPage(base: string, kind: CatalogKind, token: 
  if (items.some((row, index) => !/^[a-f0-9]{24}$/i.test(row.id) || (cursor && row.id.toLowerCase() >= cursor.toLowerCase()) || (index > 0 && row.id.toLowerCase() >= items[index - 1].id.toLowerCase()))) throw new ApiError('La API devolvió un orden inesperado.');
  return { items, nextCursor: data.nextCursor as string | null };
 }
-

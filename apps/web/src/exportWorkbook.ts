@@ -14,4 +14,3 @@ export function documentWorkbook(document: ExportDocument) {
   ]), 'Información');
   return workbook;
 }
-
