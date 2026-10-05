@@ -12,10 +12,10 @@ export async function listSales(companyId: string, branchId: string): Promise<Sa
 }
 export async function createSale(input: { companyId: string; branchId: string; customerId: string; productId: string; quantity: number }): Promise<SaleRecord> {
   const [customer, product] = await Promise.all([
-    getCustomerModel().exists({ _id: input.customerId, companyId: input.companyId, status: 'ACTIVE' }),
+    getCustomerModel().exists({ _id: input.customerId, companyId: input.companyId, branchId: input.branchId, status: 'ACTIVE' }),
     getProductModel().findOne({ _id: input.productId, companyId: input.companyId, status: 'ACTIVE' }).select('price').lean().exec()
   ]);
-  if (!customer || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Sale references are invalid', friendlyMessage: 'El cliente y el producto deben existir, estar activos y pertenecer a tu empresa.', statusCode: 400 });
+  if (!customer || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Sale references are invalid', friendlyMessage: 'El cliente y el producto deben existir, estar activos y pertenecer a tu empresa; el contacto debe ser de tu sucursal.', statusCode: 400 });
   const unitPrice = Number(product.price);
   const total = Math.round(unitPrice * input.quantity * 100) / 100;
   const row = await getSaleModel().create({ ...input, unitPrice, total, status: 'PENDIENTE' });

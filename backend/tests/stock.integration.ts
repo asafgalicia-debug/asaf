@@ -1,3 +1,7 @@
+import {createSale} from '../src/modules/ventas/saleService.js';
+import {createPurchaseOrder} from '../src/modules/compras/purchaseOrderService.js';
+import {getCustomerModel} from '../src/modules/clientes/models/Customer.js';
+import {getSupplierModel} from '../src/modules/proveedores/models/Supplier.js';
 import {getModuleConfigModel,listModuleConfigs,getModuleConfig,updateInventoryConfig} from '../src/modules/configuracion/configService.js';
 import {getAuditEventModel} from '../src/modules/auditoria/models/AuditEvent.js';
 import {settleCommercial,getSettlementModel,findCommercialSettlement} from '../src/modules/ventas/commercialSettlement.js';
@@ -298,6 +302,19 @@ describe('stock against a real local MongoDB replica set', () => {
     expect(await getBankAccountModel().countDocuments({companyId:fixture.companyId})).toBe(1);
     expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'finanzas.cuentas'})).toBe(1);
     const other=await createAuditedBankAccount({...input,branchId:'other-branch'},{userId:fixture.userId});expect(other.branchId).toBe('other-branch');
+  });
+
+  it('commercial creation rejects foreign-branch contacts while accepting the company product catalog',async()=>{
+    const contact={companyId:fixture.companyId,branchId:'foreign-branch',name:'Contact',taxId:'CONTACT123',email:'test@example.com',status:'ACTIVE'};
+    const customer=await getCustomerModel().create(contact),supplier=await getSupplierModel().create(contact);
+    const common={companyId:fixture.companyId,branchId:fixture.branchId,productId:fixture.productId,quantity:1};
+    await expect(createSale({...common,customerId:String(customer._id)})).rejects.toMatchObject({statusCode:400});
+    await expect(createPurchaseOrder({...common,supplierId:String(supplier._id),unitCost:2})).rejects.toMatchObject({statusCode:400});
+    expect(await getSaleModel().countDocuments({companyId:fixture.companyId})).toBe(0);expect(await getPurchaseOrderModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+    await getCustomerModel().updateOne({_id:customer._id},{$set:{branchId:fixture.branchId}});
+    await getSupplierModel().updateOne({_id:supplier._id},{$set:{branchId:fixture.branchId}});
+    expect((await createSale({...common,customerId:String(customer._id)})).status).toBe('PENDIENTE');
+    expect((await createPurchaseOrder({...common,supplierId:String(supplier._id),unitCost:2})).status).toBe('PENDIENTE');
   });
 
 });

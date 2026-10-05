@@ -12,10 +12,10 @@ export async function listPurchaseOrders(companyId: string, branchId: string): P
 }
 export async function createPurchaseOrder(input: { companyId: string; branchId: string; supplierId: string; productId: string; quantity: number; unitCost: number }): Promise<PurchaseOrderRecord> {
   const [supplier, product] = await Promise.all([
-    getSupplierModel().exists({ _id: input.supplierId, companyId: input.companyId, status: 'ACTIVE' }),
+    getSupplierModel().exists({ _id: input.supplierId, companyId: input.companyId, branchId: input.branchId, status: 'ACTIVE' }),
     getProductModel().exists({ _id: input.productId, companyId: input.companyId, status: 'ACTIVE' })
   ]);
-  if (!supplier || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Purchase references are invalid', friendlyMessage: 'El proveedor y producto deben existir, estar activos y pertenecer a tu empresa.', statusCode: 400 });
+  if (!supplier || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Purchase references are invalid', friendlyMessage: 'El proveedor y producto deben existir, estar activos y pertenecer a tu empresa; el contacto debe ser de tu sucursal.', statusCode: 400 });
   const total = Math.round(input.unitCost * input.quantity * 100) / 100;
   const row = await getPurchaseOrderModel().create({ ...input, total, status: 'PENDIENTE' });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, supplierId: row.supplierId, productId: row.productId, quantity: row.quantity, unitCost: row.unitCost, total: row.total, status: row.status };

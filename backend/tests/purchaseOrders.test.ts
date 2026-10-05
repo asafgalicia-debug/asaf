@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ rows: [] as any[] }));
-vi.mock('../src/modules/proveedores/models/Supplier.js', () => ({ getSupplierModel: () => ({ exists: async (filter: any) => filter.companyId === 'co-1' && filter._id === 'sup-1' }) }));
+vi.mock('../src/modules/proveedores/models/Supplier.js', () => ({ getSupplierModel: () => ({ exists: async (filter: any) => filter.companyId === 'co-1' && filter.branchId === 'br-1' && filter._id === 'sup-1' }) }));
 vi.mock('../src/modules/productos/models/Product.js', () => ({ getProductModel: () => ({ exists: async (filter: any) => filter.companyId === 'co-1' && filter._id === 'prod-1' }) }));
 vi.mock('../src/modules/compras/models/PurchaseOrder.js', () => ({ getPurchaseOrderModel: () => ({
   find: (filter: any) => { const query: any = { sort: () => query, lean: () => query, exec: async () => state.rows.filter((row) => row.companyId === filter.companyId && row.branchId === filter.branchId) }; return query; },
@@ -21,4 +21,6 @@ describe('purchase order domain', () => {
     expect(row.total).toBe(649.95);
     expect(row.status).toBe('PENDIENTE');
   });
+  it('rejects a contact from another branch before creating a document',async()=>{await expect(createPurchaseOrder({companyId:'co-1',branchId:'br-2',supplierId:'sup-1',productId:'prod-1',quantity:1, unitCost: 10})).rejects.toMatchObject({statusCode:400});expect(state.rows).toHaveLength(0);});
+
 });
