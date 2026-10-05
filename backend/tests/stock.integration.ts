@@ -8,7 +8,7 @@ import {getAuditEventModel} from '../src/modules/auditoria/models/AuditEvent.js'
 import {settleCommercial,getSettlementModel,findCommercialSettlement} from '../src/modules/ventas/commercialSettlement.js';
 import {getSaleModel} from '../src/modules/ventas/models/Sale.js';
 import {getPurchaseOrderModel} from '../src/modules/compras/models/PurchaseOrder.js';
-import {recordCommercialStock} from '../src/modules/inventario/stockService.js';
+import {recordCommercialStock,recordAuditedStock} from '../src/modules/inventario/stockService.js';
 import {getBankAccountModel,getCashMovementModel} from '../src/modules/finanzas/models/FinanceModels.js';
 import {pageBankAccounts,createBankAccount,createAuditedBankAccount} from '../src/modules/finanzas/bankAccountService.js';
 import {pageCashMovements,createCashMovement,createAuditedCashMovement} from '../src/modules/finanzas/cashMovementService.js';
@@ -354,6 +354,18 @@ describe('stock against a real local MongoDB replica set', () => {
     await expect(createAuditedSale({...common,customerId:String(customer._id)},{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});
     await expect(createAuditedPurchaseOrder({...common,supplierId:String(supplier._id),unitCost:1e100},{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});
     expect(await getSaleModel().countDocuments({companyId:fixture.companyId})).toBe(0);expect(await getPurchaseOrderModel().countDocuments({companyId:fixture.companyId})).toBe(0);expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+  });
+
+  it('manual stock audits commit with each movement and audit failure preserves balances',async()=>{
+    for(const kind of ['RECEIPT','ISSUE','TRANSFER'] as const){
+      const input={...movement('AUDITED-'+kind,1),...(kind==='TRANSFER'?{destinationWarehouseId:fixture.destinationWarehouseId}:{})};
+      const initial=await quantityAt(fixture.warehouseId);
+      const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Stock audit failure'));
+      try{await expect(recordAuditedStock(input,kind)).rejects.toThrow('Stock audit failure');}finally{spy.mockRestore();}
+      expect(await quantityAt(fixture.warehouseId)).toBe(initial);expect(await getStockMovementModel().countDocuments({companyId:fixture.companyId,reference:input.reference})).toBe(0);
+      const row=await recordAuditedStock(input,kind);expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id,module:'inventario.movimientos'})).toBe(1);
+      await expect(recordAuditedStock(input,kind)).rejects.toMatchObject({statusCode:409});expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id})).toBe(1);
+    }
   });
 
 });

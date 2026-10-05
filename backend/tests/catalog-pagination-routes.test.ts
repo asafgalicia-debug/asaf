@@ -5,13 +5,13 @@ import type { AddressInfo } from 'node:net';
 const state = vi.hoisted(() => ({ update: vi.fn(), audit: vi.fn() }));
 vi.mock('../src/middleware/authenticate.js', () => ({ authenticate: (req: any, res: any, next: any) => req.headers.authorization ? next() : res.sendStatus(401) }));
 vi.mock('../src/middleware/tenant.js', () => ({ tenant: (req: any, _: any, next: any) => { req.tenant = { companyId: 'co', branchId: 'br', userId: 'user' }; next(); } }));
-vi.mock('../src/middleware/authorize.js', () => ({ authorize: (permission: string) => (req: any, res: any, next: any) => permission === 'usuarios.ver' && req.headers.authorization === 'Bearer editor' ? next() : res.sendStatus(403) }));
+vi.mock('../src/middleware/authorize.js', () => ({ authorize: (permission: string) => (req: any, res: any, next: any) => ['usuarios.ver','usuarios.editar'].includes(permission) && req.headers.authorization === 'Bearer editor' ? next() : res.sendStatus(403) }));
 vi.mock('../src/audit/auditLogger.js', () => ({ logAuditEvent: state.audit }));
 vi.mock('../src/modules/productos/productService.js', () => ({ pageProducts: state.update, createProduct: vi.fn(), listProducts: vi.fn(), updateProduct: vi.fn() }));
 vi.mock('../src/modules/clientes/customerService.js', () => ({ pageCustomers: state.update, createCustomer: vi.fn(), listCustomers: vi.fn(), updateCustomer: vi.fn() }));
 vi.mock('../src/modules/proveedores/supplierService.js', () => ({ pageSuppliers: state.update, createSupplier: vi.fn(), listSuppliers: vi.fn(), updateSupplier: vi.fn() }));
 vi.mock('../src/modules/inventario/warehouseService.js', () => ({ pageWarehouses: state.update, createWarehouse: vi.fn(), listWarehouses: vi.fn(), renameWarehouse: vi.fn(), updateWarehouseStatus: vi.fn() }));
-vi.mock('../src/modules/inventario/stockService.js', () => ({ pageStock: state.update, listStock: vi.fn(), receiveStock: vi.fn(), issueStock: vi.fn(), transferStock: vi.fn() }));
+vi.mock('../src/modules/inventario/stockService.js', () => ({ pageStock: state.update, listStock: vi.fn(), recordAuditedStock:state.update }));
 vi.mock('../src/modules/productos/categoryService.js', () => ({ pageCategories: state.update, listCategories: vi.fn(), createCategory: vi.fn(), renameCategory: vi.fn(), updateCategoryStatus: vi.fn() }));
 import { createCategoryRoutes } from '../src/modules/productos/categoryRoutes.js';
 import { createStockRoutes } from '../src/modules/inventario/stockRoutes.js';
@@ -21,7 +21,7 @@ import { createCustomerRoutes } from '../src/modules/clientes/customerRoutes.js'
 import { createSupplierRoutes } from '../src/modules/proveedores/supplierRoutes.js';
 let server: Server; let base: string; const id = 'a'.repeat(24);
 beforeAll(async () => {
- const app = express(); app.use('/categories', createCategoryRoutes()); app.use('/stock', createStockRoutes()); app.use('/warehouses', createWarehouseRoutes()); app.use(express.json()); app.use('/products', createProductRoutes()); app.use('/customers', createCustomerRoutes()); app.use('/suppliers', createSupplierRoutes());
+ const app = express(); app.use(express.json()); app.use('/categories', createCategoryRoutes()); app.use('/stock', createStockRoutes()); app.use('/warehouses', createWarehouseRoutes()); app.use(express.json()); app.use('/products', createProductRoutes()); app.use('/customers', createCustomerRoutes()); app.use('/suppliers', createSupplierRoutes());
  app.use((error: any, _: any, res: any, __: any) => res.status(error.statusCode ?? 500).json({ error: error.code }));
  server = app.listen(0); await new Promise<void>(resolve => server.once('listening', resolve)); base = 'http://127.0.0.1:' + (server.address() as AddressInfo).port;
 });
@@ -32,4 +32,10 @@ describe.each(['products','customers','suppliers','warehouses','stock','categori
  it('requires authentication and read permission', async () => { expect((await send('', '')).status).toBe(401); expect((await send('', 'Bearer denied')).status).toBe(403); expect(state.update).not.toHaveBeenCalled(); });
  it('rejects unsafe pagination and tenant overrides', async () => { for (const query of ['?limit=51','?cursor=bad','?companyId=foreign','?branchId=foreign','?search=a&search=b']) expect((await send(query)).status).toBe(400); expect(state.update).not.toHaveBeenCalled(); });
  it('uses authenticated scope and returns the page without writing audit', async () => { const page = { items: [], nextCursor: null }; state.update.mockResolvedValue(page); const response = await send('?search=Test&limit=20'); expect(response.status).toBe(200); expect((await response.json()).data).toEqual(page); expect(state.update).toHaveBeenCalledWith(...(['products','categories'].includes(kind) ? ['co',{search:'Test',limit:20}] : ['co','br',{search:'Test',limit:20}])); expect(state.audit).not.toHaveBeenCalled(); });
+});
+
+it.each([['receipts','RECEIPT'],['issues','ISSUE'],['transfers','TRANSFER']])('stock %s uses session audit scope',async(path,kind)=>{
+ state.update.mockReset();state.update.mockResolvedValue({id});const body={warehouseId:id,productId:id,quantity:1,reference:'MANUAL',...(kind==='TRANSFER'?{destinationWarehouseId:'b'.repeat(24)}:{})};
+ const response=await fetch(base+'/stock/'+path,{method:'POST',headers:{Authorization:'Bearer editor','Content-Type':'application/json'},body:JSON.stringify(body)});
+ expect(response.status).toBe(201);expect(state.update).toHaveBeenCalledWith({...body,companyId:'co',branchId:'br',userId:'user'},kind,expect.any(String));
 });

@@ -1,3 +1,4 @@
+import { getAuditEventModel } from '../auditoria/models/AuditEvent.js';
 import {getModuleConfigModel} from '../configuracion/configService.js';
 import mongoose, { type PipelineStage } from 'mongoose';
 import { AppError } from '../../errors/AppError.js';
@@ -30,6 +31,17 @@ export async function transferStock(input: Receipt & { destinationWarehouseId: s
     throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid transfer destination', friendlyMessage: 'Selecciona un almacén de destino diferente del origen.', statusCode: 400 });
   }
   return recordStock(input, 'TRANSFER');
+}
+export async function recordAuditedStock(input: Receipt & { destinationWarehouseId?: string }, kind: 'RECEIPT'|'ISSUE'|'TRANSFER', ipAddress?:string) {
+  if(!input.userId.trim() || !input.companyId.trim() || !input.branchId.trim()) throw new AppError({code:'UNAUTHORIZED',message:'Missing audit scope',friendlyMessage:'La sesión requiere usuario, empresa y sucursal.',statusCode:401});
+  if(kind==='TRANSFER' && (!input.destinationWarehouseId || input.destinationWarehouseId===input.warehouseId)) throw new AppError({code:'VALIDATION_ERROR',message:'Invalid transfer destination',friendlyMessage:'Selecciona un almacén de destino diferente del origen.',statusCode:400});
+  const audit=getAuditEventModel();await Promise.all([audit.init(),getStockMovementModel().init(),getStockLockModel().init()]);
+  const session=await mongoose.startSession();
+  try{return await session.withTransaction(async()=>{
+    const row=await recordStock(input,kind,session);
+    await audit.create([{userId:input.userId,companyId:input.companyId,branchId:input.branchId,action:'CREATE',module:'inventario.movimientos',entityId:row.id,newState:row,details:{manual:true,kind,reference:row.reference},ipAddress}],{session});
+    return row;
+  });}finally{await session.endSession();}
 }
 export async function recordCommercialStock(input: Receipt, kind:'RECEIPT'|'ISSUE', session:mongoose.ClientSession) {
   if(!session.inTransaction())throw new AppError({code:'VALIDATION_ERROR',message:'Active transaction required',friendlyMessage:'La operación comercial requiere una transacción activa.',statusCode:400});
