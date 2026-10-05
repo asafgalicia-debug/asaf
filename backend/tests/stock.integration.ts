@@ -1,3 +1,4 @@
+import {getAuditEventModel} from '../src/modules/auditoria/models/AuditEvent.js';
 import {settleCommercial,getSettlementModel} from '../src/modules/ventas/commercialSettlement.js';
 import {getSaleModel} from '../src/modules/ventas/models/Sale.js';
 import {getPurchaseOrderModel} from '../src/modules/compras/models/PurchaseOrder.js';
@@ -10,7 +11,7 @@ import { updateCategoryCode } from '../src/modules/productos/categoryService.js'
 import { updateWarehouseCode } from '../src/modules/inventario/warehouseService.js';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getWarehouseModel } from '../src/modules/inventario/models/Warehouse.js';
 import { getProductModel } from '../src/modules/productos/models/Product.js';
 import { getStockMovementModel } from '../src/modules/inventario/models/StockMovement.js';
@@ -201,6 +202,7 @@ describe('stock against a real local MongoDB replica set', () => {
     expect((await getSaleModel().findById(sale._id))?.status).toBe('PAGADA');
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'SALE:'+sale._id})).toBe(1);
     await expect(settleCommercial(fixture,{...input,date:'2026-10-05'})).rejects.toMatchObject({statusCode:409});
+    const events=await getAuditEventModel().find({companyId:fixture.companyId,entityId:String(sale._id)}).lean();expect(events).toHaveLength(1);expect(events[0]).toMatchObject({branchId:fixture.branchId,userId:fixture.userId,module:'ventas',previousState:{status:'PENDIENTE'},newState:{status:'PAGADA'},details:{settlementId:receipt.id,stockMovementId:receipt.stockMovementId,cashMovementId:receipt.cashMovementId}});
   });
   it('rolls back commercial status and cash when stock is insufficient or account is foreign',async()=>{
     const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'BANK',status:'ACTIVE'});
@@ -209,7 +211,17 @@ describe('stock against a real local MongoDB replica set', () => {
     await expect(settleCommercial(fixture,input)).rejects.toMatchObject({statusCode:409});
     await expect(settleCommercial(fixture,{...input,accountId:new mongoose.Types.ObjectId().toString()})).rejects.toMatchObject({statusCode:400});
     expect((await getSaleModel().findById(sale._id))?.status).toBe('PENDIENTE');expect(await quantityAt(fixture.warehouseId)).toBe(10);
+    expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId})).toBe(0);
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId})).toBe(0);expect(await getSettlementModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+  });
+  it('audit storage failure rolls back status, stock, cash and receipt',async()=>{
+    const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'BANK',status:'ACTIVE'});
+    const sale=await getSaleModel().create({companyId:fixture.companyId,branchId:fixture.branchId,customerId:'customer',productId:fixture.productId,quantity:3,unitPrice:2,total:6,status:'PENDIENTE'});
+    const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Simulated audit storage failure'));
+    try {await expect(settleCommercial(fixture,{kind:'sales',sourceId:String(sale._id),warehouseId:fixture.warehouseId,accountId:String(account._id),date:'2026-10-04'})).rejects.toThrow('Simulated audit storage failure');}finally{spy.mockRestore();}
+    expect((await getSaleModel().findById(sale._id))?.status).toBe('PENDIENTE');expect(await quantityAt(fixture.warehouseId)).toBe(10);
+    for(const model of [getAuditEventModel(),getCashMovementModel(),getSettlementModel()])expect(await model.countDocuments({companyId:fixture.companyId})).toBe(0);
+    expect(await getStockMovementModel().countDocuments({companyId:fixture.companyId,reference:'SALE:'+sale._id})).toBe(0);
   });
   it('concurrent purchase settlement receives stock and pays exactly once',async()=>{
     const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'BANK',status:'ACTIVE'});
@@ -220,6 +232,7 @@ describe('stock against a real local MongoDB replica set', () => {
     expect((await getPurchaseOrderModel().findById(order._id))?.status).toBe('RECIBIDA');
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,type:'OUTFLOW',amount:8})).toBe(1);
     expect(await getSettlementModel().countDocuments({companyId:fixture.companyId,sourceId:String(order._id)})).toBe(1);
+    expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:String(order._id),module:'compras'})).toBe(1);
     await expect(settleCommercial({...fixture,branchId:'foreign'},input)).rejects.toMatchObject({statusCode:409});
   });
 });

@@ -1,3 +1,4 @@
+import {getAuditEventModel} from '../auditoria/models/AuditEvent.js';
 import mongoose,{Schema,type Model} from 'mongoose';
 import {z} from 'zod';
 import {Router} from 'express';
@@ -22,7 +23,7 @@ function serialize(row:any){const {_id,__v,...rest}=row;return {id:String(_id),.
 export async function settleCommercial(scope:{companyId:string;branchId:string;userId:string},raw:unknown){
  const parsed=settlementInput.safeParse(raw);if(!parsed.success)throw new AppError({code:'VALIDATION_ERROR',message:'Invalid settlement',friendlyMessage:'Revisa operación, almacén, cuenta y fecha.',statusCode:400});
  const input=parsed.data,key={companyId:scope.companyId,branchId:scope.branchId,kind:input.kind,sourceId:input.sourceId};
- await Promise.all([getSettlementModel().init(),getStockMovementModel().init(),getStockLockModel().init(),getCashMovementModel().init(),getSaleModel().init(),getPurchaseOrderModel().init()]);
+ await Promise.all([getAuditEventModel().init(),getSettlementModel().init(),getStockMovementModel().init(),getStockLockModel().init(),getCashMovementModel().init(),getSaleModel().init(),getPurchaseOrderModel().init()]);
  const session=await mongoose.startSession();
  try{return await session.withTransaction(async()=>{
   const existing=await getSettlementModel().findOne(key).session(session).lean().exec();
@@ -38,6 +39,7 @@ export async function settleCommercial(scope:{companyId:string;branchId:string;u
   const stock=await recordCommercialStock({...scope,warehouseId:input.warehouseId,productId:row.productId,quantity:row.quantity,reference},input.kind==='sales'?'ISSUE':'RECEIPT',session);
   const [cash]=await getCashMovementModel().create([{companyId:scope.companyId,branchId:scope.branchId,accountId:input.accountId,concept:reference,type:input.kind==='sales'?'INFLOW':'OUTFLOW',amount:row.total,date:input.date}],{session});
   const [receipt]=await getSettlementModel().create([{...scope,...input,stockMovementId:stock.id,cashMovementId:String(cash._id),quantity:row.quantity,total:row.total,status}],{session});
+  await getAuditEventModel().create([{...scope,action:'UPDATE',module:input.kind==='sales'?'ventas':'compras',entityId:input.sourceId,previousState:{status:input.kind==='sales'?'PENDIENTE':'APROBADA'},newState:{status},details:{settlementId:String(receipt._id),stockMovementId:stock.id,cashMovementId:String(cash._id),warehouseId:input.warehouseId,accountId:input.accountId,date:input.date,quantity:row.quantity,total:row.total}}],{session});
   return serialize(receipt.toObject());
  });}catch(e){if(typeof e==='object'&&e!==null&&'code'in e&&e.code===11000)throw conflict();throw e;}finally{await session.endSession();}
 }
