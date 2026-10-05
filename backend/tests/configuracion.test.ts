@@ -1,19 +1,11 @@
-import { describe, expect, it } from 'vitest';
-
-import { getModuleConfig, listModuleConfigs } from '../src/modules/configuracion/configService.js';
-
-describe('config domain', () => {
-  it('should list configuration entries for the company', () => {
-    const configs = listModuleConfigs('company-demo-01');
-
-    expect(configs.length).toBeGreaterThan(0);
-    expect(configs[0].module).toBe('auth');
-  });
-
-  it('should return a specific module configuration', () => {
-    const config = getModuleConfig('company-demo-01', 'sales');
-
-    expect(config.companyId).toBe('company-demo-01');
-    expect(config.module).toBe('sales');
-  });
+import {beforeEach,describe,expect,it,vi} from 'vitest';
+const state=vi.hoisted(()=>({find:vi.fn(),findOne:vi.fn(),exec:vi.fn()}));
+vi.mock('mongoose',async original=>{const actual=await original<any>();return {...actual,default:{...actual.default,models:{...actual.default.models,ModuleConfig:{find:state.find,findOne:state.findOne}}}};});
+import {getModuleConfig,listModuleConfigs} from '../src/modules/configuracion/configService.js';
+beforeEach(()=>{state.exec.mockReset();state.find.mockReset().mockReturnValue({sort:()=>({lean:()=>({exec:state.exec})})});state.findOne.mockReset().mockReturnValue({lean:()=>({exec:state.exec})});});
+describe('persistent company module configuration',()=>{
+ it('lists only persisted configuration scoped by company, with no demo fallback',async()=>{state.exec.mockResolvedValue([]);expect(await listModuleConfigs('company')).toEqual([]);expect(state.find).toHaveBeenCalledWith({companyId:'company'});});
+ it('returns scoped configuration and normalizes its timestamp',async()=>{state.exec.mockResolvedValue({companyId:'company',module:'sales',enabled:false,config:{},updatedAt:new Date('2026-10-04T00:00:00Z')});expect(await getModuleConfig('company','sales')).toMatchObject({enabled:false,updatedAt:'2026-10-04T00:00:00.000Z'});expect(state.findOne).toHaveBeenCalledWith({companyId:'company',module:'sales'});});
+ it('missing configuration does not expose another company or invent defaults',async()=>{state.exec.mockResolvedValue(null);await expect(getModuleConfig('foreign','sales')).rejects.toMatchObject({statusCode:404});expect(state.findOne).toHaveBeenCalledWith({companyId:'foreign',module:'sales'});});
+ it('invalid module identifiers never query storage',async()=>{for(const module of ['', ' sales ','$where','a'.repeat(81)])await expect(getModuleConfig('company',module)).rejects.toMatchObject({statusCode:400});expect(state.findOne).not.toHaveBeenCalled();});
 });

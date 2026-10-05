@@ -1,3 +1,4 @@
+import {getModuleConfigModel,listModuleConfigs,getModuleConfig} from '../src/modules/configuracion/configService.js';
 import {getAuditEventModel} from '../src/modules/auditoria/models/AuditEvent.js';
 import {settleCommercial,getSettlementModel,findCommercialSettlement} from '../src/modules/ventas/commercialSettlement.js';
 import {getSaleModel} from '../src/modules/ventas/models/Sale.js';
@@ -192,6 +193,15 @@ describe('stock against a real local MongoDB replica set', () => {
     }finally{await session.endSession();}
     expect(await quantityAt(fixture.warehouseId)).toBe(7);
     expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId,concept:'commercial-commit'})).toBe(1);
+  });
+  it('module configuration persists with company isolation and a unique module',async()=>{
+    const model=getModuleConfigModel();await model.init();
+    await model.create({companyId:fixture.companyId,module:'sales',enabled:false,config:{}});
+    await model.create({companyId:'foreign-'+fixture.companyId,module:'sales',enabled:true,config:{}});
+    expect(await listModuleConfigs(fixture.companyId)).toHaveLength(1);
+    expect((await getModuleConfig(fixture.companyId,'sales')).enabled).toBe(false);
+    await expect(getModuleConfig('missing-'+fixture.companyId,'sales')).rejects.toMatchObject({statusCode:404});
+    await expect(model.create({companyId:fixture.companyId,module:'sales',enabled:true,config:{}})).rejects.toMatchObject({code:11000});
   });
   it('settles sale once across inventory, cash and status; repeat returns same receipt',async()=>{
     const account=await getBankAccountModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Bank',bankName:'Bank',iban:'BANK',status:'ACTIVE'});

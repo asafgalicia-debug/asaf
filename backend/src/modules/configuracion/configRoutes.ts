@@ -12,7 +12,7 @@ function getCompanyId(req: Request): string {
     throw new AppError({
       code: 'UNAUTHORIZED',
       message: 'Tenant context unavailable',
-      friendlyMessage: 'La sesiÃ³n no tiene un contexto de empresa vÃ¡lido.',
+      friendlyMessage: 'La sesión no tiene un contexto de empresa válido.',
       statusCode: 401
     });
   }
@@ -22,28 +22,11 @@ function getCompanyId(req: Request): string {
 export function createConfigRoutes(): Router {
   const router = Router();
 
-  router.get('/', authenticate, tenant, authorize('configuracion.ver'), (req, res) => {
-    const companyId = getCompanyId(req);
-
-    res.json({
-      ok: true,
-      data: listModuleConfigs(companyId)
-    });
+  router.get('/', authenticate, tenant, authorize('configuracion.ver'), async (req, res, next) => {
+    try { res.json({ok:true,data:await listModuleConfigs(getCompanyId(req))}); } catch(error) { next(error); }
   });
-
-  router.get('/:module', authenticate, tenant, authorize('configuracion.ver'), (req, res, next) => {
-    try {
-      const companyId = getCompanyId(req);
-      const moduleName = String(req.params.module ?? '');
-
-      res.json({
-        ok: true,
-        data: getModuleConfig(companyId, moduleName)
-      });
-    } catch (error) {
-      next(error);
-    }
+  router.get('/:module', authenticate, tenant, authorize('configuracion.ver'), async (req, res, next) => {
+    try { res.json({ok:true,data:await getModuleConfig(getCompanyId(req),String(req.params.module??''))}); } catch(error) { next(error); }
   });
-
   return router;
 }
