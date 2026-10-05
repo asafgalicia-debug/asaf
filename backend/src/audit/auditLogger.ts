@@ -1,3 +1,5 @@
+import { catalogSlice } from '../core/catalogPagination.js';
+import type { AuditQuery } from '../modules/auditoria/auditPagination.js';
 import { AppError } from '../errors/AppError.js';
 import { getAuditEventModel } from '../modules/auditoria/models/AuditEvent.js';
 
@@ -28,4 +30,9 @@ export async function listAuditEventsForTenant(companyId: string, branchId: stri
   const AuditEventModel = getAuditEventModel();
   const events = await AuditEventModel.find({ companyId, branchId }).sort({ createdAt: -1 }).limit(limit).lean().exec();
   return events.map(({ _id, ...event }) => ({ id: String(_id), ...event }));
+}
+export async function pageAuditEventsForTenant(companyId:string,branchId:string,query:AuditQuery){
+ const filter:Record<string,unknown>={companyId,branchId};
+ if(query.cursor)filter._id={$lt:query.cursor};if(query.module)filter.module=query.module;if(query.action)filter.action=query.action;
+ const rows=await getAuditEventModel().find(filter).sort({_id:-1}).limit(query.limit+1).lean().exec();return catalogSlice(rows,query.limit);
 }

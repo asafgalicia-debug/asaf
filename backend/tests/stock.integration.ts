@@ -1,3 +1,4 @@
+import {pageAuditEventsForTenant} from '../src/audit/auditLogger.js';
 import {createAuditedSale,createAuditedPurchaseOrder,updateAuditedSaleStatus,updateAuditedPurchaseOrderStatus} from '../src/core/commercialCreation.js';
 import {createSale} from '../src/modules/ventas/saleService.js';
 import {createPurchaseOrder} from '../src/modules/compras/purchaseOrderService.js';
@@ -366,6 +367,16 @@ describe('stock against a real local MongoDB replica set', () => {
       const row=await recordAuditedStock(input,kind);expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id,module:'inventario.movimientos'})).toBe(1);
       await expect(recordAuditedStock(input,kind)).rejects.toMatchObject({statusCode:409});expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:row.id})).toBe(1);
     }
+  });
+
+  it('audit pages isolate tenants and traverse filtered events without duplicates',async()=>{
+    const common={companyId:fixture.companyId,branchId:fixture.branchId,userId:fixture.userId,action:'CREATE',module:'ventas'};
+    await getAuditEventModel().create([common,common,common,{...common,branchId:'foreign'},{...common,companyId:'foreign'},{...common,module:'compras'},{...common,action:'UPDATE'}]);
+    const first=await pageAuditEventsForTenant(fixture.companyId,fixture.branchId,{limit:2,module:'ventas',action:'CREATE'});
+    expect(first.items).toHaveLength(2);expect(first.nextCursor).toBeTruthy();
+    const second=await pageAuditEventsForTenant(fixture.companyId,fixture.branchId,{limit:2,module:'ventas',action:'CREATE',cursor:first.nextCursor!});expect(second.items).toHaveLength(1);expect(second.nextCursor).toBeNull();
+    expect(new Set([...first.items,...second.items].map(r=>r.id)).size).toBe(3);
+    for(const row of [...first.items,...second.items])expect(row).toMatchObject({companyId:fixture.companyId,branchId:fixture.branchId,module:'ventas',action:'CREATE'});
   });
 
 });

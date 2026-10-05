@@ -1,9 +1,10 @@
+import { parseAuditQuery } from './auditPagination.js';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { AppError } from '../../errors/AppError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
-import { listAuditEventsForTenant } from '../../audit/auditLogger.js';
+import { listAuditEventsForTenant, pageAuditEventsForTenant } from '../../audit/auditLogger.js';
 
 function getTenant(req: Request): { companyId: string; branchId: string } {
   const companyId = req.tenant?.companyId;
@@ -29,6 +30,7 @@ function listAuditController(req: Request, res: Response, next: NextFunction): v
 
 export function createAuditRoutes(): Router {
   const router = Router();
+  router.get('/page',authenticate,tenant,authorize('auditoria.ver'),async(req,res,next)=>{try{const scope=getTenant(req);res.json({ok:true,data:await pageAuditEventsForTenant(scope.companyId,scope.branchId,parseAuditQuery(req.query))});}catch(error){next(error);}});
   router.get('/', authenticate, tenant, authorize('auditoria.ver'), listAuditController);
   return router;
 }
