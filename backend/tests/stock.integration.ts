@@ -347,4 +347,13 @@ describe('stock against a real local MongoDB replica set', () => {
     expect(await getStockMovementModel().countDocuments({companyId:fixture.companyId})).toBe(initialStock);expect(await getCashMovementModel().countDocuments({companyId:fixture.companyId})).toBe(0);
   });
 
+  it('overflowing commercial totals create neither documents nor audit events',async()=>{
+    const contact={companyId:fixture.companyId,branchId:fixture.branchId,name:'Amount contact',taxId:'AMOUNT123',email:'test@example.com',status:'ACTIVE'};
+    const customer=await getCustomerModel().create(contact),supplier=await getSupplierModel().create(contact);
+    const common={companyId:fixture.companyId,branchId:fixture.branchId,productId:fixture.productId,quantity:1e100};
+    await expect(createAuditedSale({...common,customerId:String(customer._id)},{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});
+    await expect(createAuditedPurchaseOrder({...common,supplierId:String(supplier._id),unitCost:1e100},{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});
+    expect(await getSaleModel().countDocuments({companyId:fixture.companyId})).toBe(0);expect(await getPurchaseOrderModel().countDocuments({companyId:fixture.companyId})).toBe(0);expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+  });
+
 });

@@ -23,4 +23,6 @@ describe('purchase order domain', () => {
   });
   it('rejects a contact from another branch before creating a document',async()=>{await expect(createPurchaseOrder({companyId:'co-1',branchId:'br-2',supplierId:'sup-1',productId:'prod-1',quantity:1, unitCost: 10})).rejects.toMatchObject({statusCode:400});expect(state.rows).toHaveLength(0);});
 
+ it('rejects overflowing totals without creating a purchase',async()=>{await expect(createPurchaseOrder({companyId:'co-1',branchId:'br-1',supplierId:'sup-1',productId:'prod-1',quantity:1e100,unitCost:1e100})).rejects.toMatchObject({statusCode:400});expect(state.rows).toHaveLength(0);});
+
 });

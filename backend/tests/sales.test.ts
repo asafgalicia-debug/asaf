@@ -24,4 +24,6 @@ describe('sale domain', () => {
   });
   it('rejects a contact from another branch before creating a document',async()=>{await expect(createSale({companyId:'co-1',branchId:'br-2',customerId:'cust-1',productId:'prod-1',quantity:1})).rejects.toMatchObject({statusCode:400});expect(state.rows).toHaveLength(0);});
 
+ it('rejects overflowing totals without creating a sale',async()=>{await expect(createSale({companyId:'co-1',branchId:'br-1',customerId:'cust-1',productId:'prod-1',quantity:1e100})).rejects.toMatchObject({statusCode:400});expect(state.rows).toHaveLength(0);});
+
 });

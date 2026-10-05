@@ -1,3 +1,4 @@
+import { commercialTotal } from '../../core/commercialAmount.js';
 import type { ClientSession } from 'mongoose';
 import { commercialFilter, type CommercialQuery } from '../../core/commercialPagination.js';
 import { catalogSlice } from '../../core/catalogPagination.js';
@@ -18,7 +19,7 @@ export async function createSale(input: { companyId: string; branchId: string; c
   ]);
   if (!customer || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Sale references are invalid', friendlyMessage: 'El cliente y el producto deben existir, estar activos y pertenecer a tu empresa; el contacto debe ser de tu sucursal.', statusCode: 400 });
   const unitPrice = Number(product.price);
-  const total = Math.round(unitPrice * input.quantity * 100) / 100;
+  const total = commercialTotal(input.quantity, unitPrice);
   const row = session ? (await getSaleModel().create([{ ...input, unitPrice, total, status: 'PENDIENTE' }], { session }))[0] : await getSaleModel().create({ ...input, unitPrice, total, status: 'PENDIENTE' });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, customerId: row.customerId, productId: row.productId, quantity: row.quantity, unitPrice: row.unitPrice, total: row.total, status: row.status };
 }

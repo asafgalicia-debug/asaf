@@ -1,3 +1,4 @@
+import { commercialTotal } from '../../core/commercialAmount.js';
 import type { ClientSession } from 'mongoose';
 import { commercialFilter, type CommercialQuery } from '../../core/commercialPagination.js';
 import { catalogSlice } from '../../core/catalogPagination.js';
@@ -17,7 +18,7 @@ export async function createPurchaseOrder(input: { companyId: string; branchId: 
     getProductModel().exists({ _id: input.productId, companyId: input.companyId, status: 'ACTIVE' }).session(session ?? null)
   ]);
   if (!supplier || !product) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Purchase references are invalid', friendlyMessage: 'El proveedor y producto deben existir, estar activos y pertenecer a tu empresa; el contacto debe ser de tu sucursal.', statusCode: 400 });
-  const total = Math.round(input.unitCost * input.quantity * 100) / 100;
+  const total = commercialTotal(input.quantity, input.unitCost);
   const row = session ? (await getPurchaseOrderModel().create([{ ...input, total, status: 'PENDIENTE' }], { session }))[0] : await getPurchaseOrderModel().create({ ...input, total, status: 'PENDIENTE' });
   return { id: String(row._id), companyId: row.companyId, branchId: row.branchId, supplierId: row.supplierId, productId: row.productId, quantity: row.quantity, unitCost: row.unitCost, total: row.total, status: row.status };
 }

@@ -8,7 +8,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
 import { listPurchaseOrders, pagePurchaseOrders } from './purchaseOrderService.js';
-const schema = z.object({ supplierId: z.string().trim().min(1).max(100), productId: z.string().trim().min(1).max(100), quantity: z.number().finite().positive(), unitCost: z.number().finite().min(0) }).strict();
+const schema = z.object({ supplierId: z.string().trim().min(1).max(100), productId: z.string().trim().min(1).max(100), quantity: z.number().finite().min(0.000001), unitCost: z.number().finite().min(0) }).strict();
 const statusSchema = z.object({ expectedStatus: z.enum(['PENDIENTE', 'APROBADA', 'RECIBIDA', 'CANCELADA']), status: z.enum(['PENDIENTE', 'APROBADA', 'RECIBIDA', 'CANCELADA']) }).strict();
 function scope(req: Request): { companyId: string; branchId: string; userId: string } { const t = req.tenant; if (!t?.companyId || !t.branchId || !t.userId) throw new AppError({ code: 'UNAUTHORIZED', message: 'Tenant context missing', friendlyMessage: 'La sesion no tiene empresa y sucursal activas.', statusCode: 401 }); return { companyId: t.companyId, branchId: t.branchId, userId: t.userId }; }
 export function createPurchaseOrderRoutes(): Router {
