@@ -18,7 +18,13 @@ También se añadió edición del nombre, plan de mitigación, fecha de revisió
 
 Producción: las nuevas órdenes permiten seleccionar hasta 20 insumos, con producto, almacén de origen y cantidad total. Al completar, las salidas de insumos, entrada del terminado, orden y auditoría se guardan en la misma transacción. Se rechazan productos propios de la orden como insumos, pares repetidos, cantidades inválidas y almacenes ajenos/inactivos. No se puede cambiar la receta después del alta; las órdenes anteriores sin receta conservan su flujo. Web y móvil muestran insumos planeados/consumidos y los incluyen en PDF/Excel. No implementa producción parcial, costeo ni contabilidad del consumo. Verificación de producción: 67 pruebas MongoDB aislado y 16 pruebas dirigidas de clientes/exportación aprobadas, compilaciones API/web y tipos móviles aprobados. Pendiente publicación de este avance junto a roles, organización y riesgos.
 
-Siguen pendientes la revisión visual autenticada, archivos reales en teléfono, administración del acceso de usuarios a otras sucursales y estados de sucursales/empresa, producción avanzada, emisión fiscal e integraciones. La problemática del documento continúa excluida. No declarar terminado todo el ERP con estos pendientes.
+Producción parcial y costos por entrega: se pueden registrar hasta 50 entregas por orden; la última cierra el saldo pendiente. El avance requiere la versión y cantidad completada que revisó el usuario, para rechazar confirmaciones simultáneas o desactualizadas. Cada entrega registra entrada del terminado y consumo proporcional de insumos en la misma transacción. Se redondea el consumo acumulado a seis decimales y la entrega final consume exactamente la receta. Se conserva historial individual; una orden con entregas no se cancela desde esta pantalla. Las órdenes históricas completadas sin historial siguen consultables.
+
+Verificación acumulada de este avance: 355 pruebas generales de API, 69 de integración en MongoDB local y 265 de clientes web/móvil aprobadas; compilaciones API/web y tipos móviles aprobados. Cambios locales pendientes de publicación.
+
+Cada entrega permite informar opcionalmente costo manual con dos decimales y moneda de tres letras; la moneda se conserva para las siguientes entregas. Se acumulan únicamente costos informados, no se estiman entregas omitidas ni se crean pagos, valoración de inventario o asientos contables. PDF/Excel son informes opcionales para entregar cuando se requieran; no forman parte obligatoria del proceso.
+
+Siguen pendientes la revisión visual autenticada, archivos reales en teléfono, administración del acceso de usuarios a otras sucursales y estados de sucursales/empresa, costeo automático/valoración de producción, emisión fiscal e integraciones. La problemática del documento continúa excluida. No declarar terminado todo el ERP con estos pendientes.
 
 ## Implementación local pendiente de publicación
 

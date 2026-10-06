@@ -667,6 +667,24 @@ describe('stock against a real local MongoDB replica set', () => {
  await getCustomerModel().updateOne({_id:customer._id},{$set:{branchId:'foreign'}});expect((await pageProjects(scope,{search:'',limit:20})).items[0].customerName).toBeUndefined();
  });
 
+ it('legacy completed production remains readable without an invented delivery history',async()=>{
+ const scope=fixture;await getProductionOrderModel().create({companyId:scope.companyId,branchId:scope.branchId,productId:scope.productId,plannedQuantity:2,completedQuantity:2,status:'completed'});
+ const page=await pageProductionOrders(scope,{limit:20,status:'completed'});expect(page.items).toHaveLength(1);expect(page.items[0].completedQuantity).toBe(2);expect(page.items[0].deliveries).toBeUndefined();
+ });
+ it('partial production preserves exact consumption, rejects stale progress and rolls back failed deliveries',async()=>{
+ const scope=fixture;const finished=await getProductModel().findById(scope.productId).lean();const {_id,__v,...fields}=finished!;const product=await getProductModel().create({...fields,sku:'PARTIAL-FINISHED',name:'Partial finished'});
+ await receiveStock(movement('PARTIAL-MATERIAL-SEED',1));const baseline=await quantityAt(scope.warehouseId);
+ const order=await administerProduction(scope,'create',{productId:String(product._id),plannedQuantity:3,materials:[{productId:scope.productId,warehouseId:scope.warehouseId,quantity:1}]});let current=await administerProduction(scope,'state',{expectedStatus:'planned',status:'running'},order.id);
+ const payload=()=>({warehouseId:scope.warehouseId,expectedQuantity:3,deliveredQuantity:1,expectedCompletedQuantity:current.completedQuantity,expectedUpdatedAt:current.updatedAt.toISOString(),cost:0.1,currency:'MXN'});const first=payload();
+ const races=await Promise.allSettled([administerProduction(scope,'complete',first,order.id),administerProduction(scope,'complete',first,order.id)]);expect(races.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ current=(await administerProductionResult());expect(current.status).toBe('running');expect(current.completedQuantity).toBe(1);expect(current.materials?.[0].consumedQuantity).toBe(0.333333);expect(current.deliveries).toHaveLength(1);expect(current.productionCost).toBe(0.1);expect(current.costCurrency).toBe('MXN');
+ await expect(administerProduction(scope,'complete',{...payload(),currency:'USD'},order.id)).rejects.toMatchObject({statusCode:400});await expect(administerProduction(scope,'complete',{...payload(),cost:0.001},order.id)).rejects.toMatchObject({statusCode:400});
+ await expect(administerProduction(scope,'complete',first,order.id)).rejects.toMatchObject({statusCode:409});await expect(administerProduction(scope,'complete',{warehouseId:scope.warehouseId,expectedQuantity:3},order.id)).rejects.toMatchObject({statusCode:409});await expect(administerProduction(scope,'state',{expectedStatus:'running',status:'cancelled'},order.id)).rejects.toMatchObject({statusCode:409});
+ const before=await quantityAt(scope.warehouseId);const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Partial audit failed'));try{await expect(administerProduction(scope,'complete',payload(),order.id)).rejects.toThrow('Partial audit failed');}finally{spy.mockRestore();}expect(await quantityAt(scope.warehouseId)).toBe(before);expect((await administerProductionResult()).deliveries).toHaveLength(1);
+ current=await administerProduction(scope,'complete',payload(),order.id);expect(current.materials?.[0].consumedQuantity).toBe(0.666667);current=await administerProduction(scope,'complete',payload(),order.id);expect(current.status).toBe('completed');expect(current.completedQuantity).toBe(3);expect(current.materials?.[0].consumedQuantity).toBe(1);expect(current.deliveries).toHaveLength(3);expect(current.productionCost).toBe(0.3);expect(await quantityAt(scope.warehouseId)).toBe(baseline-1);
+ const consumed=current.deliveries!.flatMap(d=>d.materials).reduce((n,m)=>n+Math.round(m.quantity*1e6),0);expect(consumed).toBe(1000000);expect((await listStock(scope.companyId,scope.branchId)).find(r=>r.productId===String(product._id))?.quantity).toBe(3);
+ async function administerProductionResult(){const found=await getProductionOrderModel().findById(order.id).lean();return {id:order.id,...found!};}
+ });
  it('production consumes materials atomically, rejects foreign and duplicate inputs and completes only once',async()=>{
  const scope=fixture;const finished=await getProductModel().findById(scope.productId).lean();const {_id,__v,...fields}=finished!;
  const product=await getProductModel().create({...fields,sku:'FINISHED-MATERIAL-TEST',name:'Finished test'});
