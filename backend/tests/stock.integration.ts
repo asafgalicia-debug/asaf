@@ -667,6 +667,26 @@ describe('stock against a real local MongoDB replica set', () => {
  await getCustomerModel().updateOne({_id:customer._id},{$set:{branchId:'foreign'}});expect((await pageProjects(scope,{search:'',limit:20})).items[0].customerName).toBeUndefined();
  });
 
+ it('production consumes materials atomically, rejects foreign and duplicate inputs and completes only once',async()=>{
+ const scope=fixture;const finished=await getProductModel().findById(scope.productId).lean();const {_id,__v,...fields}=finished!;
+ const product=await getProductModel().create({...fields,sku:'FINISHED-MATERIAL-TEST',name:'Finished test'});
+ const material={productId:scope.productId,warehouseId:scope.warehouseId,quantity:3};
+ await expect(administerProduction(scope,'create',{productId:String(product._id),plannedQuantity:2,materials:[material,material]})).rejects.toMatchObject({statusCode:400});
+ await expect(administerProduction(scope,'create',{productId:scope.productId,plannedQuantity:2,materials:[material]})).rejects.toMatchObject({statusCode:400});
+ await expect(administerProduction({...scope,branchId:'foreign'},'create',{productId:String(product._id),plannedQuantity:2,materials:[material]})).rejects.toMatchObject({statusCode:400});
+ const order=await administerProduction(scope,'create',{productId:String(product._id),plannedQuantity:2,materials:[material]});await administerProduction(scope,'state',{expectedStatus:'planned',status:'running'},order.id);
+ const input={warehouseId:scope.warehouseId,expectedQuantity:2};
+ const existing=await quantityAt(scope.warehouseId);if(existing>0)await issueStock(movement('MATERIAL-DRAIN',existing));
+ await expect(administerProduction(scope,'complete',input,order.id)).rejects.toMatchObject({statusCode:409});
+ expect((await getProductionOrderModel().findById(order.id).lean())?.status).toBe('running');expect(await getStockMovementModel().countDocuments({reference:{$regex:'^PRODUCTION-'+order.id}})).toBe(0);
+ await receiveStock(movement('MATERIAL-SEED',5));const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('material audit failed'));
+ try{await expect(administerProduction(scope,'complete',input,order.id)).rejects.toThrow('material audit failed');}finally{spy.mockRestore();}
+ expect(await quantityAt(scope.warehouseId)).toBe(5);expect(await getStockMovementModel().countDocuments({reference:{$regex:'^PRODUCTION-'+order.id}})).toBe(0);
+ const results=await Promise.allSettled([administerProduction(scope,'complete',input,order.id),administerProduction(scope,'complete',input,order.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ expect(await quantityAt(scope.warehouseId)).toBe(2);expect(await getStockMovementModel().countDocuments({reference:{$regex:'^PRODUCTION-'+order.id}})).toBe(2);
+ const completed=await getProductionOrderModel().findById(order.id).lean();expect(completed?.materials?.[0].movementId).toBeTruthy();expect(completed?.completedQuantity).toBe(2);
+ const output=await listStock(scope.companyId,scope.branchId);expect(output.find(r=>r.productId===String(product._id))?.quantity).toBe(2);
+ });
  it('production completion and stock entry commit once and roll back together on audit failure',async()=>{
  const scope=fixture;const baseline=await quantityAt(scope.warehouseId);const row=await administerProduction(scope,'create',{productId:scope.productId,plannedQuantity:6});expect(row.status).toBe('planned');
  await administerProduction(scope,'state',{expectedStatus:'planned',status:'running'},row.id);

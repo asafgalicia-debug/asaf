@@ -12,7 +12,7 @@ import { recordCommercialStock } from '../inventario/stockService.js';
 
 const id = z.string().regex(/^[a-f0-9]{24}$/i);
 const quantity = z.number().finite().min(0.000001).max(1000000000).refine(n => Math.abs(n * 1e6 - Math.round(n * 1e6)) < 0.001);
-export const productionCreateSchema = z.object({ productId: id, plannedQuantity: quantity }).strict();
+export const productionCreateSchema = z.object({ productId: id, plannedQuantity: quantity, materials: z.array(z.object({ productId: id, warehouseId: id, quantity }).strict()).max(20).default([]) }).strict().superRefine((v,ctx)=>{ const pairs=new Set<string>(); for(const m of v.materials){const key=m.productId+':'+m.warehouseId;if(m.productId===v.productId||pairs.has(key))ctx.addIssue({code:z.ZodIssueCode.custom,message:'Invalid or duplicate material'});pairs.add(key);} });
 export const productionStateSchema = z.object({ expectedStatus: z.enum(['planned', 'running']), status: z.enum(['running', 'cancelled']) }).strict();
 export const productionCompleteSchema = z.object({ warehouseId: id, expectedQuantity: quantity }).strict();
 const pageSchema = z.object({ status: z.enum(['planned', 'running', 'completed', 'cancelled']).optional(), cursor: id.optional(), limit: z.coerce.number().int().min(1).max(50).default(20) }).strict();
@@ -29,12 +29,12 @@ export async function pageProductionOrders(scope: Scope, query: z.infer<typeof p
   if (query.status) filter.status = query.status;
   if (query.cursor) filter._id = { $lt: query.cursor };
   const rows = await getProductionOrderModel().find(filter).sort({ _id: -1 }).limit(query.limit + 1).lean().exec();
-  const ids = rows.map(row => row.productId).filter(value => /^[a-f0-9]{24}$/i.test(value));
-  const warehouseIds = rows.map(row => row.completionWarehouseId).filter((value): value is string => !!value && /^[a-f0-9]{24}$/i.test(value));
+  const ids = rows.flatMap(row => [row.productId,...(row.materials??[]).map(m=>m.productId)]).filter(value => /^[a-f0-9]{24}$/i.test(value));
+  const warehouseIds = rows.flatMap(row => [row.completionWarehouseId,...(row.materials??[]).map(m=>m.warehouseId)]).filter((value): value is string => !!value && /^[a-f0-9]{24}$/i.test(value));
   const [products, warehouses] = await Promise.all([getProductModel().find({ companyId: scope.companyId, _id: { $in: ids } }).select('name sku').lean().exec(), getWarehouseModel().find({ companyId: scope.companyId, branchId: scope.branchId, _id: { $in: warehouseIds } }).select('name').lean().exec()]);
   const names = new Map(products.map(row => [String(row._id), row]));
   const warehouseNames = new Map(warehouses.map(row => [String(row._id), row.name]));
-  return catalogSlice(rows.map(row => ({ ...row, productName: names.get(row.productId)?.name, productSku: names.get(row.productId)?.sku, completionWarehouseName: warehouseNames.get(row.completionWarehouseId ?? '') })), query.limit);
+  return catalogSlice(rows.map(row => ({ ...row, materials: (row.materials??[]).map(m=>({...m,productName:names.get(m.productId)?.name,warehouseName:warehouseNames.get(m.warehouseId)})), productName: names.get(row.productId)?.name, productSku: names.get(row.productId)?.sku, completionWarehouseName: warehouseNames.get(row.completionWarehouseId ?? '') })), query.limit);
 }
 export async function administerProduction(scope: Scope, operation: 'create' | 'state' | 'complete', payload: unknown, orderId?: string) {
   const parsed = operation === 'create' ? productionCreateSchema.safeParse(payload) : operation === 'state' ? productionStateSchema.safeParse(payload) : productionCompleteSchema.safeParse(payload);
@@ -49,6 +49,9 @@ export async function administerProduction(scope: Scope, operation: 'create' | '
       if (operation === 'create') {
         const input = parsed.data as z.infer<typeof productionCreateSchema>;
         if (!await getProductModel().exists({ _id: input.productId, companyId: scope.companyId, status: 'ACTIVE' }).session(session)) throw invalid();
+        for (const material of input.materials) {
+          if (!await getProductModel().exists({ _id: material.productId, companyId: scope.companyId, status: 'ACTIVE' }).session(session) || !await getWarehouseModel().exists({ _id: material.warehouseId, companyId: scope.companyId, branchId: scope.branchId, status: 'ACTIVE' }).session(session)) throw invalid();
+        }
         const [created] = await getProductionOrderModel().create([{ ...input, companyId: scope.companyId, branchId: scope.branchId, status: 'planned', completedQuantity: 0 }], { session });
         row = created.toObject();
       } else if (operation === 'state') {
@@ -59,12 +62,17 @@ export async function administerProduction(scope: Scope, operation: 'create' | '
         const input = parsed.data as z.infer<typeof productionCompleteSchema>;
         row = await getProductionOrderModel().findOneAndUpdate({ _id: orderId, companyId: scope.companyId, branchId: scope.branchId, status: 'running', plannedQuantity: input.expectedQuantity, completedQuantity: 0 }, { $set: { status: 'completed', completedQuantity: input.expectedQuantity, completionWarehouseId: input.warehouseId } }, { new: true, session }).lean().exec();
         if (row) {
+          const materials = [...(row.materials ?? [])].sort((a,b)=>(a.warehouseId+':'+a.productId).localeCompare(b.warehouseId+':'+b.productId));
+          for (const [index, material] of materials.entries()) {
+            const issued = await recordCommercialStock({ companyId: scope.companyId, branchId: scope.branchId, productId: material.productId, warehouseId: material.warehouseId, quantity: material.quantity, reference: 'PRODUCTION-' + orderId + '-M' + index, userId: scope.userId }, 'ISSUE', session);
+            material.movementId = issued.id;
+          }
           const movement = await recordCommercialStock({ companyId: scope.companyId, branchId: scope.branchId, productId: row.productId, warehouseId: input.warehouseId, quantity: row.plannedQuantity, reference: 'PRODUCTION-' + orderId, userId: scope.userId }, 'RECEIPT', session);
-          row = await getProductionOrderModel().findByIdAndUpdate(orderId, { $set: { completionMovementId: movement.id } }, { new: true, session }).lean().exec();
+          row = await getProductionOrderModel().findByIdAndUpdate(orderId, { $set: { completionMovementId: movement.id, materials } }, { new: true, session }).lean().exec();
         }
       }
       if (!row) throw new AppError({ code: 'CONFLICT', message: 'Production order changed', friendlyMessage: 'La orden cambió o ya fue completada. Actualiza y revisa su movimiento antes de reintentar.', statusCode: 409 });
-      await getAuditEventModel().create([{ userId: scope.userId, companyId: scope.companyId, branchId: scope.branchId, action: operation === 'create' ? 'CREATE' : 'UPDATE', module: 'produccion', entityId: String(row._id), details: { status: row.status, productId: row.productId, plannedQuantity: row.plannedQuantity, completedQuantity: row.completedQuantity, movementId: row.completionMovementId }, ipAddress: scope.ipAddress }], { session });
+      await getAuditEventModel().create([{ userId: scope.userId, companyId: scope.companyId, branchId: scope.branchId, action: operation === 'create' ? 'CREATE' : 'UPDATE', module: 'produccion', entityId: String(row._id), details: { status: row.status, productId: row.productId, plannedQuantity: row.plannedQuantity, completedQuantity: row.completedQuantity, movementId: row.completionMovementId, materials: row.materials }, ipAddress: scope.ipAddress }], { session });
       const { _id, ...rest } = row;
       result = { id: String(_id), ...rest };
     });
