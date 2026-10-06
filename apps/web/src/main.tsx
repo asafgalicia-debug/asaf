@@ -317,7 +317,7 @@ function App() {
               <h1>Tu operacion, en una nueva dimension.</h1>
               <p>Un espacio de trabajo conectado para las decisiones y operaciones de tu empresa.</p>
             </div>
-            <div className="auth-foot">ACCESO PROTEGIDO <span aria-hidden="true"> / </span> API ERP · 2026.10.06</div>
+            <div className="auth-foot">ACCESO PROTEGIDO <span aria-hidden="true"> / </span> API ERP · 2026.10.06.2</div>
           </section>
           <section className="auth-panel">
             <div className="auth-controls"><button className="icon-button" type="button" aria-label="Ajustes visuales" title="Ajustes visuales" onClick={() => setSettingsOpen(true)}>◉</button></div>
