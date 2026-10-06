@@ -1,3 +1,18 @@
+import {RolesPanel} from './RolesPanel';
+import {CompliancePanel} from './CompliancePanel';
+import {RisksPanel} from './RisksPanel';
+import {TicketsPanel} from './TicketsPanel';
+import {AssetsPanel} from './AssetsPanel';
+import {QualityPanel} from './QualityPanel';
+import {MaintenancePanel} from './MaintenancePanel';
+import {ShipmentsPanel} from './ShipmentsPanel';
+import {OpportunitiesPanel} from './OpportunitiesPanel';
+import {InvoicesPanel} from './InvoicesPanel';
+import {ProductionPanel} from './ProductionPanel';
+import {ProjectsPanel} from './ProjectsPanel';
+import {UsersPanel} from './UsersPanel';
+import {DepartmentsPanel} from './DepartmentsPanel';
+import {NotificationsPanel} from './NotificationsPanel';
 import {DemoCompanyPanel} from './DemoCompanyPanel';
 import {EmployeePanel} from './EmployeePanel';
 import {AuditPanel} from './AuditPanel';
@@ -29,7 +44,7 @@ type WarehouseRecord = { id: string; name: string; code: string; status: string 
 type PurchaseOrderRecord = { id: string; supplierId: string; productId: string; quantity: number; total: number; status: string };
 type CustomerRecord = { id: string; name: string; taxId: string; email: string; status: string };
 type Theme = { mode: 'dark' | 'light'; accent: string; font: 'modern' | 'rounded' | 'mono' };
-type Page = 'dashboard' | 'sales' | 'inventory' | 'purchases' | 'customers' | 'suppliers' | 'products' | 'finance' | 'reports' | 'audit' | 'employees';
+type Page = 'dashboard' | 'sales' | 'inventory' | 'purchases' | 'customers' | 'suppliers' | 'products' | 'finance' | 'reports' | 'audit' | 'employees' | 'notifications' | 'departments' | 'users' | 'projects' | 'production' | 'invoices' | 'crm' | 'shipments' | 'maintenance' | 'quality' | 'assets' | 'tickets' | 'risks' | 'compliance' | 'roles';
 type TenantLabels = { company?: string; branch?: string };
 
 const themeStorageKey = 'nucleo-erp-theme-v1';
@@ -60,6 +75,21 @@ const moduleItems: Array<{ id: Page; label: string; icon: string; detail: string
   { id: 'customers', label: 'Clientes', icon: '◉', detail: 'Directorio comercial' },
   { id: 'finance', label: 'Finanzas', icon: '◇', detail: 'Cuentas y movimientos' },
   {id:'employees',label:'Empleados',icon:'◉',detail:'Personal de la sucursal'},
+  {id:'roles',label:'Roles',icon:'✓',detail:'Permisos de la empresa'},
+  {id:'compliance',label:'Cumplimiento',icon:'✓',detail:'Obligaciones y revisión'},
+  {id:'risks',label:'Riesgos',icon:'✓',detail:'Mitigación y seguimiento'},
+  {id:'tickets',label:'Soporte',icon:'✓',detail:'Tickets internos'},
+  {id:'assets',label:'Activos',icon:'✓',detail:'Equipos y resultados'},
+  {id:'quality',label:'Calidad',icon:'✓',detail:'Inspecciones y resultados'},
+  {id:'maintenance',label:'Mantenimiento',icon:'⚙',detail:'Órdenes de trabajo'},
+  {id:'shipments',label:'Logística',icon:'⇄',detail:'Envíos y entregas'},
+  {id:'crm',label:'CRM',icon:'◉',detail:'Oportunidades comerciales'},
+  {id:'invoices',label:'Facturación',icon:'▤',detail:'Borradores y consulta'},
+  {id:'production',label:'Producción',icon:'▦',detail:'Órdenes y producto terminado'},
+  {id:'projects',label:'Proyectos',icon:'▦',detail:'Planificación y avance'},
+  {id:'users',label:'Usuarios',icon:'♙',detail:'Cuentas y permisos de la sucursal'},
+  {id:'departments',label:'Departamentos',icon:'▦',detail:'Organización de la sucursal'},
+  { id:'notifications',label:'Avisos',icon:'◉',detail:'Tu bandeja personal' },
   { id:'audit',label:'Auditoría',icon:'◷',detail:'Eventos de la sucursal' },
   { id: 'reports', label: 'Analitica', icon: '⌁', detail: 'Informes del negocio' }
 ];
@@ -285,7 +315,7 @@ function App() {
               <h1>Tu operacion, en una nueva dimension.</h1>
               <p>Un espacio de trabajo conectado para las decisiones y operaciones de tu empresa.</p>
             </div>
-            <div className="auth-foot">ACCESO PROTEGIDO <span aria-hidden="true"> / </span> API ERP</div>
+            <div className="auth-foot">ACCESO PROTEGIDO <span aria-hidden="true"> / </span> API ERP · 2026.10.06</div>
           </section>
           <section className="auth-panel">
             <div className="auth-controls"><button className="icon-button" type="button" aria-label="Ajustes visuales" title="Ajustes visuales" onClick={() => setSettingsOpen(true)}>◉</button></div>
@@ -311,7 +341,7 @@ function App() {
             <div className="tenant-card"><span>Espacio activo</span><strong>{tenantLabels.company || session.user.companyId}</strong><strong>{tenantLabels.branch || session.user.branchId}</strong></div>
             <div className="nav-label">Workspace</div>
             <nav className="nav-list" aria-label="Modulos principales">
-              {moduleItems.filter(item=>(item.id!=='audit'||session.user.permissions.includes('auditoria.ver'))&&(item.id!=='employees'||session.user.permissions.includes('rrhh.ver'))).map((item) => <button key={item.id} type="button" className={'nav-item' + (page === item.id ? ' active' : '')} onClick={() => { setPage(item.id); setMobileNavOpen(false); }}><span className="nav-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>)}
+              {moduleItems.filter(item=>(item.id!=='shipments'||session.user.permissions.includes('logistica.ver'))&&(item.id!=='crm'||session.user.permissions.includes('crm.ver'))&&(item.id!=='production'||session.user.permissions.includes('produccion.ver'))&&(item.id!=='projects'||session.user.permissions.includes('proyectos.ver'))&&(!['departments','users','invoices','maintenance','quality','assets','tickets','risks','compliance','roles'].includes(item.id)||session.user.permissions.includes('usuarios.ver'))&&(item.id!=='notifications'||session.user.permissions.includes('notificaciones.ver'))&&(item.id!=='audit'||session.user.permissions.includes('auditoria.ver'))&&(item.id!=='employees'||session.user.permissions.includes('rrhh.ver'))).map((item) => <button key={item.id} type="button" className={'nav-item' + (page === item.id ? ' active' : '')} onClick={() => { setPage(item.id); setMobileNavOpen(false); }}><span className="nav-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>)}
             </nav>
             <div className="sidebar-bottom"><button type="button" className="nav-item" onClick={()=>setDemoVisible(true)}>Empresa de demostración · 2,000 productos</button>
               <button className="nav-item" type="button" onClick={() => setSettingsOpen(true)}><span className="nav-icon" aria-hidden="true">⚙</span><span>Ajustes visuales</span></button>
@@ -337,7 +367,7 @@ function App() {
               <section className="panel"><p className="error-box" role="alert">{moduleError}</p></section>
             ) : page === 'dashboard' || page === 'reports' ? (
               <>{page==='reports'&&<PeriodReport apiUrl={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/>}<SummaryPanel key={page+session.user.id} apiUrl={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} report={page==='reports'}/></>
-            ) : page === 'employees' ? session.user.permissions.includes('rrhh.ver') ? <EmployeePanel canEdit={session.user.permissions.includes('rrhh.editar')} key={session.token} canManageDepartments={session.user.permissions.includes('usuarios.editar')} canCreate={session.user.permissions.includes('rrhh.crear')} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar empleados.</p> : page === 'audit' ? session.user.permissions.includes('auditoria.ver') ? <AuditPanel base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar auditoría.</p> : page === 'inventory' ? null : (
+            ) : page === 'employees' ? session.user.permissions.includes('rrhh.ver') ? <EmployeePanel canEdit={session.user.permissions.includes('rrhh.editar')} key={session.token} canManageDepartments={session.user.permissions.includes('usuarios.editar')} canCreate={session.user.permissions.includes('rrhh.crear')} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar empleados.</p> : page === 'roles' ? session.user.permissions.includes('usuarios.ver') ? <RolesPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} permissions={session.user.permissions} canManage={session.user.permissions.includes('usuarios.editar')}/> : <p>No tienes permiso para consultar roles.</p> : page === 'compliance' ? session.user.permissions.includes('usuarios.ver') ? <CompliancePanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} canManage={session.user.permissions.includes('usuarios.editar')}/> : <p>No tienes permiso para consultar cumplimiento.</p> : page === 'risks' ? session.user.permissions.includes('usuarios.ver') ? <RisksPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} canManage={session.user.permissions.includes('usuarios.editar')}/> : <p>No tienes permiso para consultar riesgos.</p> : page === 'tickets' ? session.user.permissions.includes('usuarios.ver') ? <TicketsPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} canManage={session.user.permissions.includes('usuarios.editar')}/> : <p>No tienes permiso para consultar soporte.</p> : page === 'assets' ? session.user.permissions.includes('usuarios.ver') ? <AssetsPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} canManage={session.user.permissions.includes('usuarios.editar')}/> : <p>No tienes permiso para consultar activos.</p> : page === 'quality' ? session.user.permissions.includes('usuarios.ver') ? <QualityPanel canManage={session.user.permissions.includes('usuarios.editar')} key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para Calidad.</p> : page === 'maintenance' ? session.user.permissions.includes('usuarios.ver') ? <MaintenancePanel canManage={session.user.permissions.includes('usuarios.editar')} key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para Mantenimiento.</p> : page === 'shipments' ? session.user.permissions.includes('logistica.ver') ? <ShipmentsPanel canCreate={session.user.permissions.includes('logistica.crear')} canEdit={session.user.permissions.includes('logistica.editar')} key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para Logística.</p> : page === 'crm' ? session.user.permissions.includes('crm.ver') ? <OpportunitiesPanel canCreate={session.user.permissions.includes('crm.crear')} canEdit={session.user.permissions.includes('crm.editar')} key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para CRM.</p> : page === 'invoices' ? session.user.permissions.includes('usuarios.ver') ? <InvoicesPanel canManage={session.user.permissions.includes('usuarios.editar')} key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar Facturación.</p> : page === 'production' ? session.user.permissions.includes('produccion.ver') ? <ProductionPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} canManage={session.user.permissions.includes('usuarios.editar')&&session.user.permissions.includes('usuarios.ver')}/> : <p>No tienes permiso para consultar producción.</p> : page === 'projects' ? session.user.permissions.includes('proyectos.ver') ? <ProjectsPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} canCreate={session.user.permissions.includes('proyectos.crear')} canEdit={session.user.permissions.includes('proyectos.editar')}/> : <p>No tienes permiso para consultar proyectos.</p> : page === 'users' ? session.user.permissions.includes('usuarios.ver') ? <UsersPanel currentEmail={session.user.email} canEdit={session.user.permissions.includes('usuarios.editar')} permissions={session.user.permissions} canCreate={session.user.permissions.includes('usuarios.crear')} key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar usuarios.</p> : page === 'departments' ? session.user.permissions.includes('usuarios.ver') ? <DepartmentsPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} canEdit={session.user.permissions.includes('usuarios.editar')}/> : <p>No tienes permiso para consultar departamentos.</p> : page === 'notifications' ? session.user.permissions.includes('notificaciones.ver') ? <NotificationsPanel key={session.token} base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId} userId={session.user.id}/> : <p>No tienes permiso para consultar avisos.</p> : page === 'audit' ? session.user.permissions.includes('auditoria.ver') ? <AuditPanel base={apiBaseUrl} token={session.token} companyId={session.user.companyId} branchId={session.user.branchId}/> : <p>No tienes permiso para consultar auditoría.</p> : page === 'inventory' ? null : (
               <section className="module-placeholder"><div><div className="module-placeholder-mark">{activeModule.icon}</div><h2>{activeModule.label}</h2><p>{activeModule.detail}. Esta pantalla es parte de la interfaz objetivo; conectaremos aqui los endpoints y datos reales del modulo en las siguientes etapas.</p><span className="status-chip"><span className="status-dot" /> Interfaz preparada para integracion</span></div></section>
             )}
           </main>

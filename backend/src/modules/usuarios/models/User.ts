@@ -9,6 +9,7 @@ export type UserDocument = {
   roleId: string;
   permissions: string[];
   isActive: boolean;
+  sessionVersion: number;
   lastLoginAt?: Date;
   emailVerifiedAt?: Date;
   emailVerificationHash?: string;
@@ -29,6 +30,7 @@ const userSchema = new Schema<UserDocument>(
     roleId: { type: String, required: true },
     permissions: [{ type: String }],
     isActive: { type: Boolean, default: true },
+    sessionVersion: { type: Number, default: 0, select: false },
     lastLoginAt: { type: Date },
     emailVerifiedAt: {type:Date},
     emailVerificationHash: {type:String,select:false},
@@ -42,6 +44,7 @@ const userSchema = new Schema<UserDocument>(
 );
 
 let UserModel: Model<UserDocument> | undefined;
+userSchema.index({ companyId: 1, branchId: 1, _id: -1 });
 
 export function getUserModel(): Model<UserDocument> {
   if (!UserModel) {

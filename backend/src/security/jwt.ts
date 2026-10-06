@@ -8,6 +8,7 @@ export type JwtPayload = {
   branchId?: string;
   roleId?: string;
   permissions?: string[];
+  sessionVersion?: number;
   iat?: number;
   exp?: number;
 };

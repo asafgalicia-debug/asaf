@@ -9,5 +9,6 @@ const schema = new Schema<InvoiceDocument>({
 }, { timestamps: true });
 schema.index({ companyId: 1, number: 1 }, { unique: true });
 schema.index({ companyId: 1, branchId: 1, createdAt: -1 });
+schema.index({ companyId: 1, branchId: 1, _id: -1 });
 let model: Model<InvoiceDocument> | undefined;
 export function getInvoiceModel(): Model<InvoiceDocument> { if (!model) model = mongoose.models.Invoice ?? mongoose.model<InvoiceDocument>('Invoice', schema); return model; }

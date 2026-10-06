@@ -7,7 +7,10 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
+    "admin:create": "tsx src/scripts/create-initial-admin.ts",
     "test": "vitest run",
+    "test:stock:integration": "vitest run --config vitest.stock.config.ts",
+    "test:stock:local": "node scripts/run-stock-integration.mjs",
     "lint": "eslint . --ext .ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:mongodb": "tsx src/scripts/check-mongodb.ts"
@@ -28,8 +31,9 @@
     "@types/jsonwebtoken": "^9.0.2",
     "@types/node": "^22.10.2",
     "eslint": "^9.16.0",
+    "mongodb-memory-server-core": "^10.4.3",
     "tsx": "^4.19.1",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "4.1.11"
   }
 }

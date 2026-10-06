@@ -1,19 +1,3 @@
-import { Router } from 'express';
-
-import { authenticate } from '../../middleware/authenticate.js';
-import { authorize } from '../../middleware/authorize.js';
-import { tenant } from '../../middleware/tenant.js';
-import { getAssetManagementSummary } from './assetManagementService.js';
-
-export function createAssetManagementRoutes(): Router {
-  const router = Router();
-
-  router.get('/summary', authenticate, tenant, authorize('dashboard.ver'), (_req, res) => {
-    res.json({
-      ok: true,
-      data: getAssetManagementSummary()
-    });
-  });
-
-  return router;
-}
+import {Router,type Request} from 'express';import {AppError} from '../../errors/AppError.js';import {authenticate} from '../../middleware/authenticate.js';import {authorize} from '../../middleware/authorize.js';import {tenant} from '../../middleware/tenant.js';import {administerAsset,pageAssets,parseAssetPage,assetSummary} from './assetAdministration.js';
+function scope(req:Request){const t=req.tenant;if(!t?.companyId||!t.branchId||!t.userId)throw new AppError({code:'UNAUTHORIZED',message:'Missing asset scope',friendlyMessage:'Inicia sesión con empresa y sucursal.',statusCode:401});return {companyId:t.companyId,branchId:t.branchId,userId:t.userId,ipAddress:req.ip};}
+export function createAssetManagementRoutes(){const router=Router();router.get('/summary',authenticate,tenant,authorize('usuarios.ver'),async(req,res,next)=>{try{res.json({ok:true,data:await assetSummary(scope(req))});}catch(e){next(e);}});router.get('/assets/page',authenticate,tenant,authorize('usuarios.ver'),async(req,res,next)=>{try{res.json({ok:true,data:await pageAssets(scope(req),parseAssetPage(req.query))});}catch(e){next(e);}});router.post('/assets',authenticate,tenant,authorize('usuarios.editar'),async(req,res,next)=>{try{res.status(201).json({ok:true,data:await administerAsset(scope(req),req.body)});}catch(e){next(e);}});router.patch('/assets/:id',authenticate,tenant,authorize('usuarios.editar'),async(req,res,next)=>{try{res.json({ok:true,data:await administerAsset(scope(req),req.body,String(req.params.id))});}catch(e){next(e);}});return router;}

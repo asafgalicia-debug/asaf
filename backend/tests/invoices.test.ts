@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ rows: [] as any[] }));
-vi.mock('../src/modules/ventas/models/Sale.js', () => ({ getSaleModel: () => ({ findOne: () => { const q: any = { lean: () => q, exec: async () => ({ customerId: 'cust-1', total: 1200, status: 'PENDIENTE' }) }; return q; } }) }));
-vi.mock('../src/modules/clientes/models/Customer.js', () => ({ getCustomerModel: () => ({ exists: async () => true }) }));
+vi.mock('../src/modules/ventas/models/Sale.js', () => ({ getSaleModel: () => ({ findOne: () => { const q: any = { session: () => q, lean: () => q, exec: async () => ({ customerId: 'cust-1', total: 1200, status: 'PENDIENTE' }) }; return q; } }) }));
+vi.mock('../src/modules/clientes/models/Customer.js', () => ({ getCustomerModel: () => ({ exists: () => ({ session: async () => true }) }) }));
 vi.mock('../src/modules/facturacion/models/Invoice.js', () => ({ getInvoiceModel: () => ({ find: (filter: any) => { const q: any = { sort: () => q, lean: () => q, exec: async () => state.rows.filter((r) => r.companyId === filter.companyId && r.branchId === filter.branchId) }; return q; }, create: async (i: any) => { const r = { ...i, _id: `invoice-${state.rows.length + 1}` }; state.rows.push(r); return r; } }) }));
 import { createInvoice, listInvoices } from '../src/modules/facturacion/invoiceService.js';
 describe('invoice domain', () => {

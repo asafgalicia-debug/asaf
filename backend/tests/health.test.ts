@@ -12,6 +12,9 @@ describe('ERP HTTP integration', () => {
     const address = server.address() as AddressInfo;
     baseUrl = `http://127.0.0.1:${address.port}`;
   });
+  it('trusts exactly one deployment proxy for client IP handling', () => {
+    expect(app.get('trust proxy')).toBe(1);
+  });
   afterAll(async () => {
     if (server?.listening) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   });
@@ -34,10 +37,25 @@ describe('ERP HTTP integration', () => {
     const body = await response.json() as { ok: boolean; data: { modules: Array<{ id: string }> } };
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
+    expect(body.data.modules.length).toBeGreaterThanOrEqual(25);
     expect(body.data.modules.some((module) => module.id === 'auth')).toBe(true);
+    expect(body.data.modules.some((module) => module.id === 'ventas')).toBe(true);
+    expect(body.data.modules.some((module) => module.id === 'facturacion')).toBe(true);
   });
   it('requires authentication on protected module routes', async () => {
     const response = await fetch(`${baseUrl}/api/v1/notifications`);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+  });
+  it('requires authentication to read stock history', async () => {
+    const response = await fetch(`${baseUrl}/api/v1/stock/movements`);
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
+  });
+  it.each(['/stock/receipts', '/stock/issues', '/stock/transfers'])('requires authentication before writing %s', async (path) => {
+    const response = await fetch(`${baseUrl}/api/v1${path}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
+    });
     expect(response.status).toBe(401);
     expect(await response.json()).toMatchObject({ ok: false, error: { code: 'UNAUTHORIZED' } });
   });

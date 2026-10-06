@@ -4,7 +4,10 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
   const started = Date.now();
   res.once('finish', () => {
     // Route templates only: never log bodies, headers, query strings or URL identifiers.
-    const route = typeof req.route?.path === 'string' ? req.route.path : 'unmatched';
+    const routePath: unknown = req.route?.path;
+    const route = typeof routePath === 'string' ? routePath
+      : Array.isArray(routePath) && routePath.every((path) => typeof path === 'string')
+        ? routePath.join(' | ') : 'unmatched';
     console.log(JSON.stringify({ event: 'request_completed', method: req.method, route,
       status: res.statusCode, durationMs: Date.now() - started,
       ...(typeof res.locals.errorId === 'string' ? { errorId: res.locals.errorId } : {}) }));

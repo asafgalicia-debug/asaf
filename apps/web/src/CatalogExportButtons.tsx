@@ -16,7 +16,7 @@ export function CatalogExportButtons({ base, token, kind, search, companyId, bra
       const rows = await collectCatalogPages(cursor => catalogServerPage(base, kind, token, current.signal, search, cursor), current.signal, count => { if (!current.signal.aborted) setMessage(`Consultados ${count} registros…`); });
       if (current.signal.aborted) return;
       if (!rows.length) throw new Error('No hay registros para exportar.');
-      downloadDocument(catalogDocument(kind, rows, companyId, branchId, search), format);
+      await downloadDocument(catalogDocument(kind, rows, companyId, branchId, search), format);
       setMessage(format === 'pdf' ? `Preparados ${rows.length} registros. Elige Guardar como PDF en el diálogo.` : `Excel preparado con ${rows.length} registros.`);
     } catch (error) { if (!current.signal.aborted) setMessage(error instanceof Error ? error.message : 'No se pudo exportar.'); }
     finally { clearTimeout(timer); controller.current = null; setBusy(false); if (current.signal.aborted) setMessage('Exportación cancelada.'); }

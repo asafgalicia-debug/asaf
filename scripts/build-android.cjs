@@ -1,12 +1,24 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { validateReleaseApiUrl } = require('./android-release-config.cjs');
+
+let releaseApiUrl;
+try {
+  releaseApiUrl = validateReleaseApiUrl(process.env.EXPO_PUBLIC_API_URL);
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 
 const androidDir = path.resolve(__dirname, '../apps/mobile/android');
 const env = {
   ...process.env,
   NODE_ENV: 'production',
-  // Expo 52 receives entry paths relative to the mobile app from Gradle.
+  EXPO_PUBLIC_API_URL: releaseApiUrl,
+  // Keep Gradle's wrapper cache inside the writable project workspace.
+  GRADLE_USER_HOME: process.env.GRADLE_USER_HOME || path.resolve(__dirname, '../.gradle-user-home'),
+  // Resolve the entry relative to the mobile workspace when bundling from Gradle.
   EXPO_NO_METRO_WORKSPACE_ROOT: '1',
 };
 

@@ -1,3 +1,6 @@
+import {z} from 'zod';
+import {catalogSlice} from '../../core/catalogPagination.js';
+import {getEmployeeModel} from '../recursos-humanos/models/Employee.js';
 import mongoose, {type ClientSession} from 'mongoose';
 import {getAuditEventModel} from '../auditoria/models/AuditEvent.js';
 import { randomUUID } from 'node:crypto';
@@ -18,7 +21,7 @@ export type DepartmentRecord = {
 };
 
 function serialize(row: DepartmentDocument): DepartmentRecord {
-  const { _id, ...department } = row;
+  const { _id, assignmentRevision: _revision, ...department } = row;
   return { id: String(_id), ...department };
 }
 
@@ -71,4 +74,32 @@ export async function createAuditedDepartment(input: Parameters<typeof createDep
       return row;
     });
   } finally { await session.endSession(); }
+}
+
+const pageSchema=z.object({search:z.string().trim().max(100).default(''),status:z.enum(['ACTIVE','INACTIVE']).optional(),cursor:z.string().min(1).max(100).optional(),limit:z.coerce.number().int().min(1).max(50).default(20)}).strict();
+export function parseDepartmentQuery(raw:unknown){const result=pageSchema.safeParse(raw);if(!result.success)throw new AppError({code:'VALIDATION_ERROR',message:'Invalid department query',friendlyMessage:'Revisa la búsqueda y página de departamentos.',statusCode:400});return result.data;}
+export async function pageDepartments(companyId:string,branchId:string,query:ReturnType<typeof parseDepartmentQuery>){
+ const filter:Record<string,unknown>={companyId,branchId};if(query.status)filter.status=query.status;if(query.cursor)filter._id={$lt:query.cursor};
+ if(query.search){const literal=query.search.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');filter.$or=[{name:{$regex:literal,$options:'i'}},{code:{$regex:literal,$options:'i'}}];}
+ const rows=await getDepartmentModel().find(filter).sort({_id:-1}).limit(query.limit+1).lean().exec();return catalogSlice(rows,query.limit);
+}
+// Employee assignment and department deactivation write the same document within
+// their transaction, preventing a new active assignment from racing the check.
+export async function lockActiveDepartment(companyId:string,branchId:string,id:string,session?:ClientSession){
+ const row=await getDepartmentModel().findOneAndUpdate({_id:id,companyId,branchId,status:'ACTIVE'},{$inc:{assignmentRevision:1}},{new:true,session}).lean().exec();
+ if(!row)throw new AppError({code:'VALIDATION_ERROR',message:'Inactive or foreign department',friendlyMessage:'Selecciona un departamento activo de esta sucursal.',statusCode:400});
+}
+export type DepartmentEdit={name:string;code:string;status:'ACTIVE'|'INACTIVE'};
+export async function updateAuditedDepartment(input:{companyId:string;branchId:string;id:string;name:string;code:string;status:'ACTIVE'|'INACTIVE';expected:DepartmentEdit},context:{userId:string;ipAddress?:string}){
+ if(!context.userId.trim())throw new AppError({code:'UNAUTHORIZED',message:'Missing department actor',friendlyMessage:'La sesión no tiene un usuario activo.',statusCode:401});
+ const model=getDepartmentModel(),audit=getAuditEventModel();await Promise.all([model.init(),audit.init()]);const session=await mongoose.startSession();
+ try{return await session.withTransaction(async()=>{
+  if(input.status==='ACTIVE'&&!await getBranchModel().exists({_id:input.branchId,companyId:input.companyId,isActive:true}).session(session))throw new AppError({code:'VALIDATION_ERROR',message:'Inactive department branch',friendlyMessage:'La sucursal debe estar activa para activar este departamento.',statusCode:400});
+  const values={name:input.name.trim(),code:input.code.trim().toUpperCase(),status:input.status};
+  const row=await model.findOneAndUpdate({_id:input.id,companyId:input.companyId,branchId:input.branchId,...input.expected},{$set:values},{new:true,runValidators:true,session}).lean().exec();
+  if(!row)throw new AppError({code:'CONFLICT',message:'Department changed',friendlyMessage:'El departamento cambió. Actualiza antes de editar.',statusCode:409});
+  if(input.status==='INACTIVE'&&await getEmployeeModel().exists({companyId:input.companyId,branchId:input.branchId,departmentId:input.id,status:'ACTIVE'}).session(session))throw new AppError({code:'CONFLICT',message:'Active employees in department',friendlyMessage:'Reasigna o desactiva los empleados activos antes de desactivar el departamento.',statusCode:409});
+  await audit.create([{companyId:input.companyId,branchId:input.branchId,userId:context.userId,action:'UPDATE',module:'empresas.departamentos',entityId:input.id,details:{previousCode:input.expected.code,code:values.code,previousStatus:input.expected.status,status:values.status,fields:['name','code','status'].filter(key=>values[key as keyof DepartmentEdit]!==input.expected[key as keyof DepartmentEdit])},ipAddress:context.ipAddress}],{session});
+  return serialize(row as DepartmentDocument);
+ });}catch(error){if(isDuplicateKey(error))throw new AppError({code:'CONFLICT',message:'Duplicate department code',friendlyMessage:'Ya existe un departamento con ese código en esta sucursal.',statusCode:409});throw error;}finally{await session.endSession();}
 }

@@ -9,6 +9,7 @@ export type DepartmentDocument = {
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: Date;
   updatedAt: Date;
+  assignmentRevision: number;
 };
 
 const schema = new Schema<DepartmentDocument>({
@@ -17,12 +18,14 @@ const schema = new Schema<DepartmentDocument>({
   branchId: { type: String, required: true, trim: true },
   name: { type: String, required: true, trim: true, maxlength: 120 },
   code: { type: String, required: true, trim: true, uppercase: true, maxlength: 32 },
+  assignmentRevision: {type: Number, default: 0, select: false},
   status: { type: String, enum: ['ACTIVE', 'INACTIVE'], default: 'ACTIVE', required: true }
 }, { timestamps: true, versionKey: false });
 
 schema.index({ companyId: 1, branchId: 1, code: 1 }, { unique: true });
 schema.index({ companyId: 1, branchId: 1, status: 1, name: 1 });
 
+schema.index({companyId:1,branchId:1,_id:-1});
 let model: Model<DepartmentDocument> | undefined;
 export function getDepartmentModel(): Model<DepartmentDocument> {
   if (!model) model = mongoose.models.Department ?? mongoose.model<DepartmentDocument>('Department', schema);

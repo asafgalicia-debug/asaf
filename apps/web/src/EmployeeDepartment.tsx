@@ -1,0 +1,9 @@
+import {useState} from 'react';
+import type {Employee} from './employeeApi';
+import {useEmployeeDepartment} from './useEmployeeDepartment';
+type Props={base:string;token:string;employee:Employee;onSaved:()=>void};
+export function EmployeeDepartment(p:Props){const [open,setOpen]=useState(false);return open?<Form {...p} onClose={()=>{setOpen(false);p.onSaved();}}/>:<button onClick={()=>setOpen(true)}>Cambiar departamento</button>;}
+function Form({base,token,employee,onSaved,onClose}:Props&{onClose:()=>void}){
+ const s=useEmployeeDepartment(base,token,employee,onClose),o=s.options,locked=s.busy||s.blocked;
+ return <fieldset disabled={s.busy}><legend>Cambiar departamento de {s.original.fullName}</legend><p>Departamento actual: {s.original.departmentId}</p><label>Buscar departamento activo<input disabled={locked} maxLength={100} value={o.search} onChange={e=>o.setSearch(e.target.value)}/></label><button disabled={locked||o.loading} onClick={o.apply}>Buscar departamentos</button>{o.loading&&<p>Consultando…</p>}{o.error&&<p role="alert">{o.error}</p>}{!o.loading&&!o.error&&!o.items.length&&<p>No hay departamentos activos para esta búsqueda.</p>}{o.items.map(row=><label key={row.id}><input type="radio" name={'department-'+employee.id} disabled={locked} checked={o.selected?.id===row.id} onChange={()=>o.setSelected(row)}/>{row.name}{row.id===s.original.departmentId?' · Actual':''}</label>)}<p>Seleccionado: {o.selected?.name??'Ninguno'} · Página {o.page}</p><button disabled={locked||o.loading||o.page===1} onClick={o.previous}>Anterior</button><button disabled={locked||o.loading||!o.hasNext} onClick={o.next}>Siguiente</button>{s.error&&<p role="alert">{s.error}</p>}<button disabled={!s.ready} onClick={()=>{if(window.confirm(`Cambiar a ${s.original.fullName} al departamento ${o.selected?.name}?`))void s.save();}}>Guardar departamento</button><button onClick={onClose}>Cerrar y actualizar empleado</button></fieldset>;
+}

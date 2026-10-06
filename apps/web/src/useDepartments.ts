@@ -1,0 +1,15 @@
+import {useEffect,useRef,useState} from 'react';
+import {ApiError} from './webApi';
+import {departmentPage,editDepartment,type Department} from './departmentAdminApi';
+export function useDepartments(base:string,token:string,co:string,br:string,onExpired?:()=>void){
+ const [search,setSearch]=useState(''),[status,setStatus]=useState(''),[filter,setFilter]=useState({search:'',status:''}),[cursors,setCursors]=useState<Array<string|undefined>>([undefined]),[page,setPage]=useState<{items:Department[];nextCursor:string|null}>({items:[],nextCursor:null}),[loading,setLoading]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0);const cursor=cursors[cursors.length-1];
+ useEffect(()=>{const c=new AbortController();setLoading(true);setError('');setPage({items:[],nextCursor:null});departmentPage(base,token,co,br,filter.search,filter.status,cursor,c.signal).then(p=>{if(!c.signal.aborted)setPage(p);}).catch(e=>{if(!c.signal.aborted){if(e instanceof ApiError&&e.status===401&&onExpired)onExpired();else setError(e instanceof Error?e.message:'No se pudo consultar.');}}).finally(()=>{if(!c.signal.aborted)setLoading(false);});return()=>c.abort();},[base,token,co,br,filter,cursor,revision,onExpired]);
+ return {search,setSearch,status,setStatus,page,loading,error,pageNumber:cursors.length,apply:()=>{setFilter({search:search.trim(),status});setCursors([undefined]);setRevision(v=>v+1);},refresh:()=>{setCursors([undefined]);setRevision(v=>v+1);},previous:()=>setCursors(v=>v.length>1?v.slice(0,-1):v),next:()=>{if(page.nextCursor)setCursors(v=>[...v,page.nextCursor!]);}};
+}
+export function useDepartmentEdit(base:string,token:string,department:Department,onSaved:()=>void,onExpired?:()=>void){
+ const [original]=useState(()=>({...department})),[name,setName]=useState(department.name),[code,setCode]=useState(department.code),[status,setStatus]=useState(department.status),[busy,setBusy]=useState(false),[blocked,setBlocked]=useState(false),[error,setError]=useState('');const controller=useRef<AbortController|null>(null),alive=useRef(true);
+ useEffect(()=>{alive.current=true;return()=>{alive.current=false;controller.current?.abort();};},[]);
+ const ready=!busy&&!blocked&&!!name.trim()&&name.trim().length<=120&&!!code.trim()&&code.trim().length<=32&&(name.trim()!==original.name||code.trim().toUpperCase()!==original.code||status!==original.status);
+ async function save(){if(!ready||controller.current)return;const c=new AbortController();controller.current=c;setBusy(true);setError('');try{await editDepartment(base,token,original,name,code,status,c.signal);if(alive.current&&!c.signal.aborted)onSaved();}catch(e){if(alive.current&&!c.signal.aborted){if(e instanceof ApiError&&e.status===401&&onExpired)onExpired();else{setError(e instanceof Error?e.message:'No se pudo confirmar. Actualiza antes de reintentar.');setBlocked(!(e instanceof ApiError&&[400,403].includes(e.status)));}}}finally{controller.current=null;if(alive.current)setBusy(false);}}
+ return {name,setName,code,setCode,status,setStatus,busy,blocked,error,ready,save};
+}

@@ -35,8 +35,8 @@ const mongoRepository: AuthRepository = {
 function invalidCredentials(): AppError {
   return new AppError({
     code: 'UNAUTHORIZED',
-    message: 'Credenciales invÃ¡lidas',
-    friendlyMessage: 'El email o la contraseÃ±a son incorrectos.',
+    message: 'Credenciales inválidas',
+    friendlyMessage: 'El email o la contraseña son incorrectos.',
     statusCode: 401
   });
 }
@@ -44,8 +44,8 @@ function invalidCredentials(): AppError {
 function temporarilyUnavailable(): AppError {
   return new AppError({
     code: 'INTERNAL',
-    message: 'Servicio de autenticaciÃ³n no disponible',
-    friendlyMessage: 'No se pudo iniciar sesiÃ³n temporalmente. IntÃ©ntalo de nuevo.',
+    message: 'Servicio de autenticación no disponible',
+    friendlyMessage: 'No se pudo iniciar sesión temporalmente. Inténtalo de nuevo.',
     statusCode: 503
   });
 }
@@ -90,6 +90,7 @@ export async function authenticateCredentials(
       branchId: safeUser.branchId,
       roleId: safeUser.roleId,
       permissions: safeUser.permissions
+      ,sessionVersion: user.sessionVersion ?? 0
     });
     return { token, user: safeUser };
   } catch (error) {

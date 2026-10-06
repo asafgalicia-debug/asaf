@@ -1,19 +1,3 @@
-import { Router } from 'express';
-
-import { authenticate } from '../../middleware/authenticate.js';
-import { authorize } from '../../middleware/authorize.js';
-import { tenant } from '../../middleware/tenant.js';
-import { getQualitySummary } from './qualityService.js';
-
-export function createQualityRoutes(): Router {
-  const router = Router();
-
-  router.get('/summary', authenticate, tenant, authorize('dashboard.ver'), (_req, res) => {
-    res.json({
-      ok: true,
-      data: getQualitySummary()
-    });
-  });
-
-  return router;
-}
+import {Router,type Request} from 'express';import {AppError} from '../../errors/AppError.js';import {authenticate} from '../../middleware/authenticate.js';import {authorize} from '../../middleware/authorize.js';import {tenant} from '../../middleware/tenant.js';import {administerQuality,pageQuality,parseQualityPage,qualitySummary} from './qualityAdministration.js';
+function scope(req:Request){const t=req.tenant;if(!t?.companyId||!t.branchId||!t.userId)throw new AppError({code:'UNAUTHORIZED',message:'Missing quality scope',friendlyMessage:'Inicia sesión con empresa y sucursal.',statusCode:401});return {companyId:t.companyId,branchId:t.branchId,userId:t.userId,ipAddress:req.ip};}
+export function createQualityRoutes(){const router=Router();router.get('/summary',authenticate,tenant,authorize('usuarios.ver'),async(req,res,next)=>{try{res.json({ok:true,data:await qualitySummary(scope(req))});}catch(e){next(e);}});router.get('/orders/page',authenticate,tenant,authorize('usuarios.ver'),async(req,res,next)=>{try{res.json({ok:true,data:await pageQuality(scope(req),parseQualityPage(req.query))});}catch(e){next(e);}});router.post('/orders',authenticate,tenant,authorize('usuarios.editar'),async(req,res,next)=>{try{res.status(201).json({ok:true,data:await administerQuality(scope(req),req.body)});}catch(e){next(e);}});router.patch('/orders/:id/status',authenticate,tenant,authorize('usuarios.editar'),async(req,res,next)=>{try{res.json({ok:true,data:await administerQuality(scope(req),req.body,String(req.params.id))});}catch(e){next(e);}});return router;}

@@ -1,8 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AppError } from '../../errors/AppError.js';
-import { logAuditEvent } from '../../audit/auditLogger.js';
-import { createRoleForCompany, findAssignableRole, listRolesForCompany } from './roleService.js';
+import { updateAuditedRole, createAuditedRole, findAssignableRole, listRolesForCompany } from './roleService.js';
 
 const createRoleSchema = z.object({
   name: z.string().trim().min(2).max(60),
@@ -38,8 +37,8 @@ export async function createRoleController(req: Request, res: Response, next: Ne
     if (!parsed.success) throw new AppError({ code: 'VALIDATION_ERROR', message: 'Invalid role data', friendlyMessage: 'Verifica el nombre, la descripcion y los permisos del rol.', statusCode: 400 });
     const actorPermissions = new Set(req.user?.permissions ?? []);
     if (parsed.data.permissions.some((permission) => !actorPermissions.has(permission))) throw new AppError({ code: 'FORBIDDEN', message: 'Attempt to grant permissions not held by actor', friendlyMessage: 'Solo puedes asignar permisos que ya tienes.', statusCode: 403 });
-    const created = await createRoleForCompany(companyId, parsed.data);
-    await logAuditEvent({ userId, companyId, branchId, action: 'CREATE', module: 'roles', entityId: created.id, details: { roleName: created.name, permissionCount: created.permissions.length }, ipAddress: req.ip });
+    const created = await createAuditedRole({companyId,branchId,userId,permissions:[...actorPermissions],ipAddress:req.ip}, parsed.data);
     res.status(201).json({ ok: true, data: created });
   } catch (error) { next(error); }
 }
+export async function updateRoleController(req:Request,res:Response,next:NextFunction){try{const companyId=requireCompanyId(req),branchId=req.tenant?.branchId,userId=req.user?.id;if(!branchId||!userId)throw new AppError({code:'UNAUTHORIZED',message:'Missing actor',friendlyMessage:'Inicia sesión de nuevo.',statusCode:401});res.json({ok:true,data:await updateAuditedRole({companyId,branchId,userId,permissions:req.user?.permissions??[],ipAddress:req.ip},String(req.params.id),req.body)});}catch(e){next(e);}}

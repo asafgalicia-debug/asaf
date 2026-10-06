@@ -1,4 +1,4 @@
-﻿import mongoose, { Schema, type Model } from 'mongoose';
+import mongoose, { Schema, type Model } from 'mongoose';
 
 export type NotificationChannel = 'EMAIL' | 'PUSH' | 'IN_APP';
 export type NotificationStatus = 'PENDING' | 'SENT' | 'READ' | 'FAILED';
@@ -25,6 +25,7 @@ const schema = new Schema<NotificationDocument>({
 }, { timestamps: true });
 
 schema.index({ companyId: 1, branchId: 1, userId: 1, createdAt: -1 });
+schema.index({ companyId: 1, branchId: 1, userId: 1, channel: 1, status: 1, _id: -1 });
 let model: Model<NotificationDocument> | undefined;
 export function getNotificationModel(): Model<NotificationDocument> {
   if (!model) model = mongoose.models.Notification ?? mongoose.model<NotificationDocument>('Notification', schema);

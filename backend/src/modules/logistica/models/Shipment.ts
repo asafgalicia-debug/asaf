@@ -1,0 +1,4 @@
+import mongoose,{Schema,type Model} from 'mongoose';
+export type ShipmentDocument={companyId:string;branchId:string;saleId:string;destination:string;scheduledDate:string;status:'PENDING'|'IN_TRANSIT'|'DELIVERED'|'CANCELLED';createdAt:Date;updatedAt:Date};
+const schema=new Schema<ShipmentDocument>({companyId:{type:String,required:true},branchId:{type:String,required:true},saleId:{type:String,required:true},destination:{type:String,required:true,trim:true,maxlength:300},scheduledDate:{type:String,required:true},status:{type:String,required:true,enum:['PENDING','IN_TRANSIT','DELIVERED','CANCELLED']}},{timestamps:true});schema.index({companyId:1,branchId:1,_id:-1});
+export function getShipmentModel():Model<ShipmentDocument>{return mongoose.models.Shipment??mongoose.model<ShipmentDocument>('Shipment',schema);}

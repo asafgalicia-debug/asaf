@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
-import { createRoleController, listRolesController, resolveRoleController } from './roleController.js';
+import { updateRoleController, createRoleController, listRolesController, resolveRoleController } from './roleController.js';
 
 export function createRoleRoutes(): Router {
   const router = Router();
@@ -12,5 +12,6 @@ export function createRoleRoutes(): Router {
   router.get('/:roleName/permissions', authenticate, tenant, authorize('usuarios.ver'), resolveRoleController);
   router.post('/', authenticate, tenant, authorize('usuarios.editar'), createRoleController);
 
+  router.patch('/:id',authenticate,tenant,authorize('usuarios.editar'),updateRoleController);
   return router;
 }

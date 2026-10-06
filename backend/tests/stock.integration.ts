@@ -1,3 +1,38 @@
+import {updateAuditedRole,createAuditedRole,listRolesForCompany,findAssignableRole} from '../src/modules/roles/roleService.js';
+import {getRoleModel} from '../src/modules/roles/models/Role.js';
+import {administerCompliance,pageCompliance,complianceSummary} from '../src/modules/compliance/complianceAdministration.js';
+import {getComplianceControlModel} from '../src/modules/compliance/models/ComplianceControl.js';
+import {administerRisk,pageRisks,riskSummary} from '../src/modules/riskManagement/riskAdministration.js';
+import {getRiskRecordModel} from '../src/modules/riskManagement/models/RiskRecord.js';
+import {administerTicket,pageTickets,ticketSummary} from '../src/modules/serviceDesk/ticketAdministration.js';
+import {getSupportTicketModel} from '../src/modules/serviceDesk/models/SupportTicket.js';
+import {administerAsset,pageAssets,assetSummary} from '../src/modules/assetManagement/assetAdministration.js';
+import {getManagedAssetModel} from '../src/modules/assetManagement/models/ManagedAsset.js';
+import {administerQuality,qualitySummary,pageQuality} from '../src/modules/calidad/qualityAdministration.js';
+import {getQualityInspectionModel} from '../src/modules/calidad/models/QualityInspection.js';
+import {administerMaintenance,pageMaintenance,maintenanceSummary} from '../src/modules/mantenimiento/maintenanceAdministration.js';
+import {getMaintenanceOrderModel} from '../src/modules/mantenimiento/models/MaintenanceOrder.js';
+import {administerShipment,pageShipments} from '../src/modules/logistica/shipmentAdministration.js';
+import {getShipmentModel} from '../src/modules/logistica/models/Shipment.js';
+import { administerOpportunity, pageOpportunities } from '../src/modules/crm/opportunityAdministration.js';
+import { getOpportunityModel } from '../src/modules/crm/models/Opportunity.js';
+import { createAuditedInvoice, cancelInvoiceDraft, pageInvoices, invoiceSaleOptions } from '../src/modules/facturacion/invoiceService.js';
+import { getInvoiceModel } from '../src/modules/facturacion/models/Invoice.js';
+import {administerProduction,pageProductionOrders} from '../src/modules/produccion/productionAdministration.js';
+import {getProductionOrderModel} from '../src/modules/produccion/models/ProductionOrder.js';
+import {saveAuditedProject,pageProjects,pageProjectCustomers} from '../src/modules/proyectos/projectAdministration.js';
+import {getProjectModel} from '../src/modules/proyectos/models/Project.js';
+import {updateUserAccess} from '../src/modules/usuarios/userAccessService.js';
+import {authenticate} from '../src/middleware/authenticate.js';
+import {signToken} from '../src/security/jwt.js';
+import {renameAuditedUser} from '../src/modules/usuarios/userRepositoryMongo.js';
+import {createAuditedUserInMongo} from '../src/modules/usuarios/userRepositoryMongo.js';
+import {resolveRolePermissions} from '../src/modules/roles/roleService.js';
+import {pageUsersForTenantMongo} from '../src/modules/usuarios/userRepositoryMongo.js';
+import {updateAuditedDepartment,pageDepartments} from '../src/modules/empresas/departmentService.js';
+import {updateAuditedEmployeeDepartment} from '../src/modules/recursos-humanos/employeeService.js';
+import {pageNotifications,markNotificationRead} from '../src/modules/notificaciones/notificationService.js';
+import {getNotificationModel} from '../src/modules/notificaciones/models/Notification.js';
 import {requestEmailVerification,confirmEmailVerification,verificationDigest} from '../src/modules/auth/emailVerification.js';
 import {updateAuditedEmployeeStatus} from '../src/modules/recursos-humanos/employeeService.js';
 import {updateAuditedEmployee} from '../src/modules/recursos-humanos/employeeService.js';
@@ -37,6 +72,7 @@ import { getStockLockModel } from '../src/modules/inventario/models/StockLock.js
 import { issueStock, listStock, pageStock, pageStockAlerts, receiveStock, transferStock } from '../src/modules/inventario/stockService.js';
 import { listStockHistory } from '../src/modules/inventario/stockHistoryService.js';
 
+vi.hoisted(()=>{process.env.JWT_SECRET ||= 'local-integration-only-secret-0123456789abcdef0123456789abcdef0123456789abcdef';});
 // Deliberately do not load .env. Require an explicit local test replica set;
 // forbid remote hosts, credentials and database names supplied by callers.
 const uri = process.env.STOCK_TEST_MONGODB_URI;
@@ -86,6 +122,21 @@ describe('stock against a real local MongoDB replica set', () => {
     const product = await getProductModel().create({ companyId, categoryId: 'test-category', name: 'Product', sku: 'PRODUCT', price: 1 });
     fixture = { companyId, branchId, warehouseId: String(source._id), destinationWarehouseId: String(destination._id), productId: String(product._id), userId: 'test-user' };
     await receiveStock(movement('opening', 10));
+  });
+  it('inbox pagination isolates the owner and keeps pending delivery untouched in MongoDB',async()=>{
+    const {companyId,branchId}=fixture,model=getNotificationModel();
+    const make=(userId:string,scope=branchId,channel='IN_APP',status='SENT')=>({companyId,branchId:scope,userId,title:'Notice',message:'Local test',channel,status});
+    const own=await model.create(Array.from({length:25},()=>make('owner')));
+    const [foreign,external]=await model.create([make('other'),make('owner',branchId,'EMAIL','PENDING'),make('owner','foreign')]);
+    const first=await pageNotifications(companyId,branchId,'owner',{limit:20});
+    const second=await pageNotifications(companyId,branchId,'owner',{limit:20,cursor:first.nextCursor!});
+    expect(first.items).toHaveLength(20);expect(second.items).toHaveLength(5);expect(second.nextCursor).toBe(null);
+    expect(new Set([...first.items,...second.items].map(n=>n.id)).size).toBe(25);
+    await expect(markNotificationRead(companyId,branchId,'owner',String(foreign._id))).rejects.toMatchObject({statusCode:404});
+    await expect(markNotificationRead(companyId,branchId,'owner',String(external._id))).rejects.toMatchObject({statusCode:404});
+    await Promise.all([markNotificationRead(companyId,branchId,'owner',String(own[0]._id)),markNotificationRead(companyId,branchId,'owner',String(own[0]._id))]);
+    expect((await pageNotifications(companyId,branchId,'owner',{limit:20,status:'READ'})).items.map(n=>n.id)).toEqual([String(own[0]._id)]);
+    expect((await model.findById(external._id).lean())?.status).toBe('PENDING');
   });
   it('pages real financial records without leaking other branches or regex search',async()=>{
     const {companyId,branchId}=fixture;
@@ -489,4 +540,276 @@ describe('stock against a real local MongoDB replica set', () => {
   await expect(requestEmailVerification(scope,config,send)).rejects.toThrow('mock delivery failure');expect(await getUserModel().findById(user._id).select('+emailVerificationHash').lean()).not.toHaveProperty('emailVerificationHash');
  });
 
+ it('employee department reassignment is scoped, audited, rollback-safe and concurrent-safe',async()=>{
+  const {companyId,branchId,userId}=fixture,departments=getDepartmentModel(),employees=getEmployeeModel(),audit=getAuditEventModel();
+  const prefix=randomUUID();const [target,other,inactive,foreign]=await departments.create([
+   {_id:prefix+'-target',companyId,branchId,name:'Target',code:'TARGET'},
+   {_id:prefix+'-other',companyId,branchId,name:'Other',code:'OTHER'},
+   {_id:prefix+'-inactive',companyId,branchId,name:'Inactive',code:'INACTIVE',status:'INACTIVE'},
+   {_id:prefix+'-foreign',companyId,branchId:'foreign',name:'Foreign',code:'FOREIGN'}]);
+  const employee=await employees.create({companyId,branchId,userId:'linked',departmentId:'original',fullName:'Employee Name',position:'Role',status:'ACTIVE'});
+  const input={companyId,branchId,id:String(employee._id),departmentId:target._id,expectedDepartmentId:'original',expectedStatus:'ACTIVE' as const};
+  for(const departmentId of [inactive._id,foreign._id,'missing'])await expect(updateAuditedEmployeeDepartment({...input,departmentId},{userId})).rejects.toMatchObject({statusCode:400});
+  await expect(updateAuditedEmployeeDepartment({...input,expectedStatus:'INACTIVE'},{userId})).rejects.toMatchObject({statusCode:409});
+  const fail=vi.spyOn(audit,'create').mockRejectedValueOnce(new Error('audit failure'));
+  try{await expect(updateAuditedEmployeeDepartment(input,{userId})).rejects.toThrow('audit failure');}finally{fail.mockRestore();}
+  expect((await employees.findById(employee._id).lean())?.departmentId).toBe('original');
+  const results=await Promise.allSettled([updateAuditedEmployeeDepartment(input,{userId}),updateAuditedEmployeeDepartment({...input,departmentId:other._id},{userId})]);
+  expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);expect(results.filter(x=>x.status==='rejected')).toHaveLength(1);
+  expect(await audit.countDocuments({companyId,branchId,module:'rrhh',entityId:String(employee._id)})).toBe(1);
+  expect(await employees.findById(employee._id).lean()).toMatchObject({userId:'linked',fullName:'Employee Name',position:'Role',status:'ACTIVE'});
+ });
+
+ it('department administration preserves active employees, unique codes and audit atomicity',async()=>{
+  const {companyId,branchId,userId}=fixture;await getBranchModel().create({_id:branchId,companyId,name:'Local branch',city:'Test City',code:'LOCAL',isActive:true});
+  const model=getDepartmentModel(),audit=getAuditEventModel();const id='dept-'+randomUUID();
+  await model.create([{_id:id,companyId,branchId,name:'Original A+B',code:'OLD'}, {_id:id+'-duplicate',companyId,branchId,name:'Duplicate',code:'TAKEN'}]);
+  const input={companyId,branchId,id,name:'Updated',code:'NEW',status:'ACTIVE' as const,expected:{name:'Original A+B',code:'OLD',status:'ACTIVE' as const}};
+  const failure=vi.spyOn(audit,'create').mockRejectedValueOnce(new Error('audit failure'));
+  try{await expect(updateAuditedDepartment(input,{userId})).rejects.toThrow('audit failure');}finally{failure.mockRestore();}
+  expect(await model.findById(id).lean()).toMatchObject(input.expected);
+  await expect(updateAuditedDepartment({...input,code:'TAKEN'},{userId})).rejects.toMatchObject({statusCode:409});
+  const employee=await getEmployeeModel().create({companyId,branchId,userId:'linked',departmentId:id,fullName:'Employee',position:'Role',status:'ACTIVE'});
+  await expect(updateAuditedDepartment({...input,status:'INACTIVE'},{userId})).rejects.toMatchObject({statusCode:409});
+  expect(await model.findById(id).lean()).toMatchObject(input.expected);
+  expect((await pageDepartments(companyId,branchId,{search:'A+B',limit:20})).items.map(x=>x.id)).toEqual([id]);
+  expect((await pageDepartments(companyId,branchId,{search:'.*',limit:20})).items).toHaveLength(0);
+  await getEmployeeModel().updateOne({_id:employee._id},{$set:{status:'INACTIVE'}});
+  const saved=await updateAuditedDepartment({...input,status:'INACTIVE'},{userId});expect(saved).toMatchObject({name:'Updated',code:'NEW',status:'INACTIVE'});expect(saved).not.toHaveProperty('assignmentRevision');
+  await expect(updateAuditedDepartment(input,{userId})).rejects.toMatchObject({statusCode:409});
+  expect(await audit.countDocuments({companyId,branchId,entityId:id})).toBe(1);
+ });
+ it('department deactivation racing employee reassignment cannot leave an active employee in an inactive department',async()=>{
+  const {companyId,branchId,userId}=fixture;await getBranchModel().create({_id:branchId,companyId,name:'Race branch',city:'Test City',code:'RACE',isActive:true});
+  const id='dept-'+randomUUID();await getDepartmentModel().create({_id:id,companyId,branchId,name:'Target',code:'TARGET'});
+  const employee=await getEmployeeModel().create({companyId,branchId,userId:'linked',departmentId:'original',fullName:'Employee',position:'Role',status:'ACTIVE'});
+  const results=await Promise.allSettled([
+   updateAuditedDepartment({companyId,branchId,id,name:'Target',code:'TARGET',status:'INACTIVE',expected:{name:'Target',code:'TARGET',status:'ACTIVE'}},{userId}),
+   updateAuditedEmployeeDepartment({companyId,branchId,id:String(employee._id),departmentId:id,expectedDepartmentId:'original',expectedStatus:'ACTIVE'},{userId})]);
+  expect(results.filter(x=>x.status==='fulfilled')).toHaveLength(1);
+  const current=await getEmployeeModel().findById(employee._id).lean(),department=await getDepartmentModel().findById(id).lean();
+  expect(current?.departmentId===id&&department?.status==='INACTIVE').toBe(false);
+  expect(await getAuditEventModel().countDocuments({companyId,branchId,entityId:{$in:[id,String(employee._id)]}})).toBe(1);
+ });
+
+ it('user directory pages isolate scope, filter literal searches and exclude verification secrets',async()=>{
+  const {companyId,branchId}=fixture;const User=getUserModel();
+  const users=Array.from({length:23},(_,i)=>({name:'Directory A+B '+i,email:`directory-${companyId}-${i}@example.com`,companyId,branchId,roleId:'role-sales',permissions:['usuarios.ver'],isActive:true,passwordHash:'private-hash',emailVerificationHash:'private-token'}));
+  await User.create([...users,{...users[0],email:`inactive-${companyId}@example.com`,isActive:false},{...users[0],email:`foreign-${companyId}@example.com`,branchId:'foreign'}]);
+  const first=await pageUsersForTenantMongo(companyId,branchId,{search:'A+B',status:'ACTIVE',limit:20});
+  expect(first.items).toHaveLength(20);expect(first.nextCursor).toBeTruthy();
+  const second=await pageUsersForTenantMongo(companyId,branchId,{search:'A+B',status:'ACTIVE',limit:20,cursor:first.nextCursor!});
+  expect(second.items).toHaveLength(3);expect(second.nextCursor).toBeNull();
+  expect(new Set([...first.items,...second.items].map(row=>row.id)).size).toBe(23);
+  for(const row of [...first.items,...second.items]){expect(row.branchId).toBe(branchId);expect(row).not.toHaveProperty('passwordHash');expect(row).not.toHaveProperty('emailVerificationHash');}
+  expect((await pageUsersForTenantMongo(companyId,branchId,{search:'.*',limit:20})).items).toHaveLength(0);
+  expect((await pageUsersForTenantMongo(companyId,branchId,{search:'A+B',status:'INACTIVE',limit:20})).items).toHaveLength(1);
+ });
+
+ it('user creation commits with audit, rejects elevated permissions and rolls back audit failures',async()=>{
+  const {companyId,branchId,userId}=fixture;
+  const input={companyId,branchId,name:'New directory user',email:`new-${companyId}@example.com`,password:'LocalTestPassword123!',roleId:'role-consulta-demo',actorPermissions:resolveRolePermissions('CONSULTA')};
+  await expect(createAuditedUserInMongo({...input,actorPermissions:['usuarios.crear']},{userId})).rejects.toMatchObject({statusCode:403});
+  expect(await getUserModel().countDocuments({email:input.email})).toBe(0);
+  const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('User audit unavailable'));
+  try{await expect(createAuditedUserInMongo(input,{userId})).rejects.toThrow('User audit unavailable');}finally{spy.mockRestore();}
+  expect(await getUserModel().countDocuments({email:input.email})).toBe(0);
+  const created=await createAuditedUserInMongo(input,{userId});expect(created).not.toHaveProperty('passwordHash');expect(created).not.toHaveProperty('password');
+  const stored=await getUserModel().findById(created.id).select('+passwordHash').lean();expect(stored?.passwordHash).not.toBe(input.password);expect(stored?.permissions).toEqual(input.actorPermissions);
+  const audit=await getAuditEventModel().findOne({companyId,branchId,module:'usuarios',entityId:created.id}).lean();expect(audit?.details).toEqual({roleId:input.roleId});expect(JSON.stringify(audit)).not.toContain(input.password);
+  await expect(createAuditedUserInMongo(input,{userId})).rejects.toMatchObject({statusCode:409});expect(await getAuditEventModel().countDocuments({companyId,branchId,module:'usuarios',entityId:created.id})).toBe(1);
+ });
+
+ it('user rename preserves credentials and permissions, rejects stale names and rolls back audit errors',async()=>{
+ const {companyId,branchId,userId}=fixture;const User=getUserModel();const row=await User.create({companyId,branchId,name:'Original user',email:`rename-${companyId}@example.com`,passwordHash:'preserved-hash',roleId:'role-sales',permissions:['ventas.ver'],isActive:true,emailVerificationHash:'preserved-token'});
+ const input={companyId,branchId,id:String(row._id),name:'Renamed user',expectedName:'Original user'};
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Rename audit unavailable'));
+ try{await expect(renameAuditedUser(input,{userId})).rejects.toThrow('Rename audit unavailable');}finally{spy.mockRestore();}
+ expect((await User.findById(row._id).lean())?.name).toBe('Original user');
+ await expect(renameAuditedUser({...input,branchId:'foreign'},{userId})).rejects.toMatchObject({statusCode:409});
+ const updated=await renameAuditedUser(input,{userId});expect(updated.name).toBe('Renamed user');expect(updated.email).toBe(row.email);expect(updated.permissions).toEqual(['ventas.ver']);expect(updated).not.toHaveProperty('passwordHash');expect(updated).not.toHaveProperty('emailVerificationHash');
+ const stored=await User.findById(row._id).select('+passwordHash +emailVerificationHash').lean();expect(stored?.passwordHash).toBe('preserved-hash');expect(stored?.emailVerificationHash).toBe('preserved-token');
+ await expect(renameAuditedUser(input,{userId})).rejects.toMatchObject({statusCode:409});expect(await getAuditEventModel().countDocuments({companyId,branchId,module:'usuarios',entityId:input.id})).toBe(1);
+ });
+
+ it('access changes revoke sessions atomically, protect self and permissions, and preserve credentials',async()=>{
+ const {companyId,branchId}=fixture;const User=getUserModel();const user=await User.create({companyId,branchId,name:'Access Test',email:`access-${companyId}@example.com`,passwordHash:'unchanged',roleId:'role-consulta-demo',permissions:resolveRolePermissions('CONSULTA'),isActive:true});
+ const actor={userId:'000000000000000000000001',permissions:[...new Set([...resolveRolePermissions('CONSULTA'),...resolveRolePermissions('VENTAS')])]};const expected={roleId:user.roleId,isActive:true,permissions:[...user.permissions]};const input={id:String(user._id),companyId,branchId,expected,change:{isActive:false}};
+ const token=signToken({sub:String(user._id),companyId,branchId,sessionVersion:0});
+ const check=async(t:string)=>{const req:any={headers:{authorization:'Bearer '+t}},next=vi.fn();await authenticate(req,{} as any,next);return next.mock.calls[0][0];};expect(await check(token)).toBeUndefined();
+ await expect(updateUserAccess(input,{...actor,userId:input.id})).rejects.toMatchObject({statusCode:400});
+ await expect(updateUserAccess({...input,change:{roleId:'role-admin-demo'}},actor)).rejects.toMatchObject({statusCode:403});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Access audit unavailable'));
+ try{await expect(updateUserAccess(input,actor)).rejects.toThrow('Access audit unavailable');}finally{spy.mockRestore();}
+ expect(await check(token)).toBeUndefined();const disabled=await updateUserAccess(input,actor);expect(disabled.isActive).toBe(false);expect(disabled).not.toHaveProperty('sessionVersion');expect(await check(token)).toMatchObject({statusCode:401});
+ await expect(updateUserAccess(input,actor)).rejects.toMatchObject({statusCode:409});
+ await updateUserAccess({...input,expected:{...expected,isActive:false},change:{isActive:true}},actor);expect(await check(token)).toMatchObject({statusCode:401});
+ const fresh=signToken({sub:input.id,companyId,branchId,sessionVersion:2});expect(await check(fresh)).toBeUndefined();
+ const roleChanged=await updateUserAccess({...input,change:{roleId:'role-ventas-demo'}},actor);expect(roleChanged.roleId).toBe('role-ventas-demo');expect(await check(fresh)).toMatchObject({statusCode:401});
+ const stored=await User.findById(input.id).select('+passwordHash +sessionVersion').lean();expect(stored?.passwordHash).toBe('unchanged');expect(stored?.sessionVersion).toBe(3);expect(await getAuditEventModel().countDocuments({companyId,branchId,module:'usuarios',entityId:input.id})).toBe(3);
+ });
+
+ it('project create and edits are scoped, audited, validated and protected from stale snapshots',async()=>{
+ const scope=fixture;const customer=await getCustomerModel().create({companyId:scope.companyId,branchId:scope.branchId,name:'Project client',taxId:'PROJECTCLIENT',email:'client@example.com',status:'ACTIVE'});const input={customerId:String(customer._id),name:'Project A+B',startDate:'2026-10-01',endDate:'2026-12-31'};
+ await expect(saveAuditedProject({...scope,branchId:'foreign'},input)).rejects.toMatchObject({statusCode:400});await expect(saveAuditedProject(scope,{...input,endDate:'2026-02-30'})).rejects.toMatchObject({statusCode:400});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Project audit unavailable'));try{await expect(saveAuditedProject(scope,input)).rejects.toThrow('Project audit unavailable');}finally{spy.mockRestore();}expect(await getProjectModel().countDocuments({companyId:scope.companyId})).toBe(0);
+ const row=await saveAuditedProject(scope,input);const expected={name:row.name,startDate:row.startDate,endDate:row.endDate,status:row.status,progress:row.progress};const edit={name:'Updated project',startDate:row.startDate,endDate:row.endDate,status:'PAUSED',progress:40,expected};
+ await expect(saveAuditedProject(scope,{...edit,status:'CLOSED'},row.id)).rejects.toMatchObject({statusCode:400});const updated=await saveAuditedProject(scope,edit,row.id);expect(updated.progress).toBe(40);expect(updated.customerId).toBe(row.customerId);await expect(saveAuditedProject(scope,edit,row.id)).rejects.toMatchObject({statusCode:409});
+ const next={name:updated.name,startDate:updated.startDate,endDate:updated.endDate,status:updated.status,progress:updated.progress};const closed=await saveAuditedProject(scope,{...next,status:'CLOSED',progress:100,expected:next},row.id);expect(closed.status).toBe('CLOSED');expect(await getAuditEventModel().countDocuments({companyId:scope.companyId,module:'proyectos',entityId:row.id})).toBe(3);
+ expect((await pageProjects(scope,{search:'Updated',status:'CLOSED',limit:20})).items).toHaveLength(1);expect((await pageProjects({...scope,branchId:'foreign'},{search:'',limit:20})).items).toHaveLength(0);expect((await pageProjects(scope,{search:'.*',limit:20})).items).toHaveLength(0);
+ expect((await pageProjects(scope,{search:'',limit:20})).items[0].customerName).toBe('Project client');
+ const options=await pageProjectCustomers(scope,{search:'',limit:20});expect(options.items.map(x=>x.id)).toContain(String(customer._id));expect((await pageProjectCustomers({...scope,branchId:'foreign'},{search:'',limit:20})).items).toHaveLength(0);
+ await getCustomerModel().updateOne({_id:customer._id},{$set:{branchId:'foreign'}});expect((await pageProjects(scope,{search:'',limit:20})).items[0].customerName).toBeUndefined();
+ });
+
+ it('production completion and stock entry commit once and roll back together on audit failure',async()=>{
+ const scope=fixture;const baseline=await quantityAt(scope.warehouseId);const row=await administerProduction(scope,'create',{productId:scope.productId,plannedQuantity:6});expect(row.status).toBe('planned');
+ await administerProduction(scope,'state',{expectedStatus:'planned',status:'running'},row.id);
+ const input={warehouseId:scope.warehouseId,expectedQuantity:6};await expect(administerProduction({...scope,branchId:'foreign'},'complete',input,row.id)).rejects.toMatchObject({statusCode:409});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Production audit unavailable'));
+ try{await expect(administerProduction(scope,'complete',input,row.id)).rejects.toThrow('Production audit unavailable');}finally{spy.mockRestore();}
+ expect((await getProductionOrderModel().findById(row.id).lean())?.status).toBe('running');expect(await quantityAt(scope.warehouseId)).toBe(baseline);
+ const results=await Promise.allSettled([administerProduction(scope,'complete',input,row.id),administerProduction(scope,'complete',input,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(await quantityAt(scope.warehouseId)).toBe(baseline+6);
+ const completed=await getProductionOrderModel().findById(row.id).lean();expect(completed?.completedQuantity).toBe(6);expect(completed?.completionMovementId).toBeTruthy();expect(await getStockMovementModel().countDocuments({companyId:scope.companyId,reference:'PRODUCTION-'+row.id})).toBe(1);
+ expect(await getAuditEventModel().countDocuments({companyId:scope.companyId,module:'produccion',entityId:row.id})).toBe(3);expect((await pageProductionOrders(scope,{limit:20,status:'completed'})).items).toHaveLength(1);
+ const display=(await pageProductionOrders(scope,{limit:20,status:'completed'})).items[0];expect(display.productName).toBeTruthy();expect(display.completionWarehouseName).toBeTruthy();
+ await getWarehouseModel().updateOne({_id:scope.warehouseId},{$set:{branchId:'foreign'}});expect((await pageProductionOrders(scope,{limit:20,status:'completed'})).items[0].completionWarehouseName).toBeUndefined();await getWarehouseModel().updateOne({_id:scope.warehouseId},{$set:{branchId:scope.branchId}});
+ await expect(administerProduction(scope,'state',{expectedStatus:'running',status:'cancelled'},row.id)).rejects.toMatchObject({statusCode:409});
+ const cancelled=await administerProduction(scope,'create',{productId:scope.productId,plannedQuantity:2});await administerProduction(scope,'state',{expectedStatus:'planned',status:'cancelled'},cancelled.id);expect(await quantityAt(scope.warehouseId)).toBe(baseline+6);
+ });
+
+
+it('invoice draft and audit roll back together and require the customer branch', async () => {
+ const customer=await getCustomerModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Invoice client',taxId:'INVOICECLIENT',email:'invoice@example.com',status:'ACTIVE'});
+ const sale=await getSaleModel().create({companyId:fixture.companyId,branchId:fixture.branchId,customerId:String(customer._id),productId:fixture.productId,quantity:1,unitPrice:10,total:10,status:'PENDIENTE'});
+ const input={companyId:fixture.companyId,branchId:fixture.branchId,saleId:String(sale._id),number:'DRAFT-001',issueDate:'2026-10-05',dueDate:'2026-10-20',taxRate:16};
+ const audit=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('audit unavailable'));
+ await expect(createAuditedInvoice(input,{userId:fixture.userId})).rejects.toThrow('audit unavailable');audit.mockRestore();
+ expect(await getInvoiceModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await createAuditedInvoice(input,{userId:fixture.userId});expect(row.total).toBe(11.6);expect(row.status).toBe('BORRADOR');
+ await expect(createAuditedInvoice(input,{userId:fixture.userId})).rejects.toMatchObject({statusCode:409});
+ await getCustomerModel().updateOne({_id:customer._id},{$set:{branchId:'foreign-branch'}});
+ await expect(createAuditedInvoice({...input,number:'DRAFT-002'},{userId:fixture.userId})).rejects.toMatchObject({statusCode:400});
+ expect(await getInvoiceModel().countDocuments({companyId:fixture.companyId})).toBe(1);
+});
+
+
+it('draft cancellation is scoped, audited and does not change sale or stock', async()=>{
+ const customer=await getCustomerModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'Cancel client',taxId:'CANCELCLIENT',email:'cancel@example.com',status:'ACTIVE'});
+ const sale=await getSaleModel().create({companyId:fixture.companyId,branchId:fixture.branchId,customerId:String(customer._id),productId:fixture.productId,quantity:1,unitPrice:10,total:10,status:'PENDIENTE'});
+ const options=await invoiceSaleOptions(fixture.companyId,fixture.branchId,{limit:20});expect(options.items[0].customerName).toBe('Cancel client');expect((await invoiceSaleOptions(fixture.companyId,'foreign',{limit:20})).items).toHaveLength(0);
+ const draft=await createAuditedInvoice({companyId:fixture.companyId,branchId:fixture.branchId,saleId:String(sale._id),number:'CANCEL-001',issueDate:'2026-10-05',dueDate:'2026-10-20',taxRate:16},{userId:fixture.userId});
+ const stored=await getInvoiceModel().findById(draft.id).lean();const payload={expectedUpdatedAt:stored!.updatedAt.toISOString(),reason:'Duplicated draft'};const actor={userId:fixture.userId};const baseline=await quantityAt(fixture.warehouseId);
+ await expect(cancelInvoiceDraft(fixture.companyId,'foreign',draft.id,payload,actor)).rejects.toMatchObject({statusCode:409});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('cancel audit unavailable'));
+ try{await expect(cancelInvoiceDraft(fixture.companyId,fixture.branchId,draft.id,payload,actor)).rejects.toThrow('cancel audit unavailable');}finally{spy.mockRestore();}
+ expect((await getInvoiceModel().findById(draft.id).lean())?.status).toBe('BORRADOR');
+ const results=await Promise.allSettled([cancelInvoiceDraft(fixture.companyId,fixture.branchId,draft.id,payload,actor),cancelInvoiceDraft(fixture.companyId,fixture.branchId,draft.id,payload,actor)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ expect((await getSaleModel().findById(sale._id).lean())?.status).toBe('PENDIENTE');expect(await quantityAt(fixture.warehouseId)).toBe(baseline);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'facturacion',entityId:draft.id})).toBe(2);
+ expect((await pageInvoices(fixture.companyId,fixture.branchId,{search:'CANCEL-',status:'CANCELADA',limit:20})).items).toHaveLength(1);
+ expect((await pageInvoices(fixture.companyId,fixture.branchId,{search:'.*',limit:20})).items).toHaveLength(0);
+});
+
+it('CRM persists scoped opportunities and closes only once with atomic audit',async()=>{
+ const customer=await getCustomerModel().create({companyId:fixture.companyId,branchId:fixture.branchId,name:'CRM client',taxId:'CRMCLIENT',email:'crm@example.com',status:'ACTIVE'});const input={customerId:String(customer._id),name:'CRM A+B',amount:125.25};
+ await expect(administerOpportunity({...fixture,branchId:'foreign'},input)).rejects.toMatchObject({statusCode:400});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('CRM audit unavailable'));try{await expect(administerOpportunity(fixture,input)).rejects.toThrow('CRM audit unavailable');}finally{spy.mockRestore();}expect(await getOpportunityModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerOpportunity(fixture,input);expect(row.status).toBe('OPEN');const change={stage:'CLOSED_WON',expectedStage:row.stage,expectedUpdatedAt:row.updatedAt.toISOString()};
+ await expect(administerOpportunity({...fixture,branchId:'foreign'},change,row.id)).rejects.toMatchObject({statusCode:409});
+ const results=await Promise.allSettled([administerOpportunity(fixture,change,row.id),administerOpportunity(fixture,change,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ const saved=await getOpportunityModel().findById(row.id).lean();expect(saved?.status).toBe('WON');expect(saved?.amount).toBe(125.25);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'crm',entityId:row.id})).toBe(2);
+ const page=await pageOpportunities(fixture,{search:'A+B',status:'WON',limit:20});expect(page.items).toHaveLength(1);expect(page.items[0].customerName).toBe('CRM client');expect((await pageOpportunities(fixture,{search:'.*',limit:20})).items).toHaveLength(0);expect((await pageOpportunities({...fixture,branchId:'foreign'},{search:'',limit:20})).items).toHaveLength(0);
+ await expect(administerOpportunity(fixture,{stage:'PROPOSAL',expectedStage:'CLOSED_WON',expectedUpdatedAt:saved!.updatedAt.toISOString()},row.id)).rejects.toMatchObject({statusCode:400});
+});
+
+it('shipments persist scoped progress with atomic audit and leave stock unchanged',async()=>{
+ const sale=await getSaleModel().create({companyId:fixture.companyId,branchId:fixture.branchId,customerId:'customer',productId:fixture.productId,quantity:1,unitPrice:10,total:10,status:'PENDIENTE'});const input={saleId:String(sale._id),destination:'Address A+B',scheduledDate:'2026-10-05'};const baseline=await quantityAt(fixture.warehouseId);
+ await expect(administerShipment({...fixture,branchId:'foreign'},input)).rejects.toMatchObject({statusCode:400});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Shipment audit unavailable'));try{await expect(administerShipment(fixture,input)).rejects.toThrow('Shipment audit unavailable');}finally{spy.mockRestore();}expect(await getShipmentModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerShipment(fixture,input);const change={status:'IN_TRANSIT',expectedStatus:'PENDING',expectedUpdatedAt:row.updatedAt.toISOString()};await expect(administerShipment({...fixture,branchId:'foreign'},change,row.id)).rejects.toMatchObject({statusCode:409});
+ const results=await Promise.allSettled([administerShipment(fixture,change,row.id),administerShipment(fixture,change,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);const inTransit=await getShipmentModel().findById(row.id).lean();
+ await administerShipment(fixture,{status:'DELIVERED',expectedStatus:'IN_TRANSIT',expectedUpdatedAt:inTransit!.updatedAt.toISOString()},row.id);expect((await getShipmentModel().findById(row.id).lean())?.status).toBe('DELIVERED');expect(await quantityAt(fixture.warehouseId)).toBe(baseline);expect((await getSaleModel().findById(sale._id).lean())?.status).toBe('PENDIENTE');expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'logistica',entityId:row.id})).toBe(3);
+ expect((await pageShipments(fixture,{search:'A+B',status:'DELIVERED',limit:20})).items).toHaveLength(1);expect((await pageShipments(fixture,{search:'.*',limit:20})).items).toHaveLength(0);
+ await expect(administerShipment(fixture,{status:'CANCELLED',expectedStatus:'IN_TRANSIT',expectedUpdatedAt:inTransit!.updatedAt.toISOString()},row.id)).rejects.toMatchObject({statusCode:409});
+});
+
+it('maintenance records are scoped and close once with atomic audit and real summary',async()=>{
+ const input={assetName:'Equipment A+B',description:'Preventive inspection',scheduledDate:'2026-10-05',priority:'high'};
+ expect((await maintenanceSummary(fixture)).total).toBe(0);
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Maintenance audit unavailable'));try{await expect(administerMaintenance(fixture,input)).rejects.toThrow('Maintenance audit unavailable');}finally{spy.mockRestore();}expect(await getMaintenanceOrderModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerMaintenance(fixture,input);const start={status:'in_progress',expectedStatus:'scheduled',expectedUpdatedAt:row.updatedAt.toISOString()};await expect(administerMaintenance({...fixture,branchId:'foreign'},start,row.id)).rejects.toMatchObject({statusCode:409});
+ const running=await administerMaintenance(fixture,start,row.id);const close={status:'completed',expectedStatus:'in_progress',expectedUpdatedAt:running.updatedAt.toISOString(),completionNote:'Inspection completed'};
+ const results=await Promise.allSettled([administerMaintenance(fixture,close,row.id),administerMaintenance(fixture,close,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await getMaintenanceOrderModel().findById(row.id).lean())?.completionNote).toBe('Inspection completed');expect((await maintenanceSummary(fixture)).counts.completed).toBe(1);expect((await maintenanceSummary({...fixture,branchId:'foreign'})).total).toBe(0);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'mantenimiento',entityId:row.id})).toBe(3);expect((await pageMaintenance(fixture,{search:'A+B',status:'completed',limit:20})).items).toHaveLength(1);expect((await pageMaintenance(fixture,{search:'.*',limit:20})).items).toHaveLength(0);
+ await expect(administerMaintenance(fixture,{status:'cancelled',expectedStatus:'in_progress',expectedUpdatedAt:running.updatedAt.toISOString()},row.id)).rejects.toMatchObject({statusCode:409});
+});
+it('quality records are scoped and close once with atomic audit and real summary',async()=>{
+ const baseline=await quantityAt(fixture.warehouseId);const input={subject:'Equipment A+B',criteria:'Preventive inspection',inspectionDate:'2026-10-05',priority:'high'};
+ expect((await qualitySummary(fixture)).total).toBe(0);
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Quality audit unavailable'));try{await expect(administerQuality(fixture,input)).rejects.toThrow('Quality audit unavailable');}finally{spy.mockRestore();}expect(await getQualityInspectionModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerQuality(fixture,input);const start={status:'in_progress',expectedStatus:'scheduled',expectedUpdatedAt:row.updatedAt.toISOString()};await expect(administerQuality({...fixture,branchId:'foreign'},start,row.id)).rejects.toMatchObject({statusCode:409});
+ const running=await administerQuality(fixture,start,row.id);const close={status:'completed',expectedStatus:'in_progress',expectedUpdatedAt:running.updatedAt.toISOString(),result:'pass',completionNote:'Inspection completed'};
+ const results=await Promise.allSettled([administerQuality(fixture,close,row.id),administerQuality(fixture,close,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await getQualityInspectionModel().findById(row.id).lean())?.completionNote).toBe('Inspection completed');expect(await quantityAt(fixture.warehouseId)).toBe(baseline);expect((await getQualityInspectionModel().findById(row.id).lean())?.result).toBe('pass');expect((await qualitySummary(fixture)).counts.completed).toBe(1);expect((await qualitySummary({...fixture,branchId:'foreign'})).total).toBe(0);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'calidad',entityId:row.id})).toBe(3);expect((await pageQuality(fixture,{search:'A+B',status:'completed',limit:20})).items).toHaveLength(1);expect((await pageQuality(fixture,{search:'.*',limit:20})).items).toHaveLength(0);
+ await expect(administerQuality(fixture,{status:'cancelled',expectedStatus:'in_progress',expectedUpdatedAt:running.updatedAt.toISOString()},row.id)).rejects.toMatchObject({statusCode:409});
+});
+
+
+it('assets persist scoped unique codes and retire once with atomic audit',async()=>{
+ const input={name:'Pump A+B',code:'pump_01',location:'Plant A'};const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Asset audit unavailable'));try{await expect(administerAsset(fixture,input)).rejects.toThrow('Asset audit unavailable');}finally{spy.mockRestore();}expect(await getManagedAssetModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerAsset(fixture,input);expect(row.code).toBe('PUMP_01');await expect(administerAsset(fixture,input)).rejects.toMatchObject({statusCode:409});const change={name:row.name,location:'Plant B',status:'retired',expectedStatus:row.status,expectedUpdatedAt:row.updatedAt.toISOString()};await expect(administerAsset({...fixture,branchId:'foreign'},change,row.id)).rejects.toMatchObject({statusCode:409});const results=await Promise.allSettled([administerAsset(fixture,change,row.id),administerAsset(fixture,change,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await assetSummary(fixture)).counts.retired).toBe(1);expect((await assetSummary({...fixture,branchId:'foreign'})).total).toBe(0);expect((await pageAssets(fixture,{search:'A+B',limit:20})).items).toHaveLength(1);expect((await pageAssets(fixture,{search:'.*',limit:20})).items).toHaveLength(0);expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'activos',entityId:row.id})).toBe(2);expect(await quantityAt(fixture.warehouseId)).toBe(10);
+});
+it('ticket records are scoped and close once with atomic audit and real summary',async()=>{
+ const baseline=await quantityAt(fixture.warehouseId);const input={subject:'Equipment A+B',description:'Preventive inspection',targetDate:'2026-10-05',priority:'high'};
+ expect((await ticketSummary(fixture)).total).toBe(0);
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Maintenance audit unavailable'));try{await expect(administerTicket(fixture,input)).rejects.toThrow('Maintenance audit unavailable');}finally{spy.mockRestore();}expect(await getSupportTicketModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerTicket(fixture,input);const start={status:'in_progress',expectedStatus:'open',expectedUpdatedAt:row.updatedAt.toISOString()};await expect(administerTicket({...fixture,branchId:'foreign'},start,row.id)).rejects.toMatchObject({statusCode:409});
+ const running=await administerTicket(fixture,start,row.id);const close={status:'resolved',expectedStatus:'in_progress',expectedUpdatedAt:running.updatedAt.toISOString(),completionNote:'Inspection resolved'};
+ const closingAudit=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Resolution audit unavailable'));try{await expect(administerTicket(fixture,close,row.id)).rejects.toThrow('Resolution audit unavailable');}finally{closingAudit.mockRestore();}expect((await getSupportTicketModel().findById(row.id).lean())?.status).toBe('in_progress');
+ const results=await Promise.allSettled([administerTicket(fixture,close,row.id),administerTicket(fixture,close,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await getSupportTicketModel().findById(row.id).lean())?.completionNote).toBe('Inspection resolved');expect(await quantityAt(fixture.warehouseId)).toBe(baseline);expect((await ticketSummary(fixture)).counts.resolved).toBe(1);expect((await ticketSummary({...fixture,branchId:'foreign'})).total).toBe(0);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'soporte',entityId:row.id})).toBe(3);expect((await pageTickets(fixture,{search:'A+B',status:'resolved',limit:20})).items).toHaveLength(1);expect((await pageTickets(fixture,{search:'.*',limit:20})).items).toHaveLength(0);
+ await expect(administerTicket(fixture,{status:'cancelled',expectedStatus:'in_progress',expectedUpdatedAt:running.updatedAt.toISOString()},row.id)).rejects.toMatchObject({statusCode:409});
+});
+
+it('ticket records are scoped and close once with atomic audit and real summary',async()=>{
+ const baseline=await quantityAt(fixture.warehouseId);const input={name:'Equipment A+B',mitigationPlan:'Preventive inspection',reviewDate:'2026-10-05',level:'high'};
+ expect((await riskSummary(fixture)).total).toBe(0);
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Maintenance audit unavailable'));try{await expect(administerRisk(fixture,input)).rejects.toThrow('Maintenance audit unavailable');}finally{spy.mockRestore();}expect(await getRiskRecordModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerRisk(fixture,input);const start={status:'mitigating',expectedStatus:'identified',expectedUpdatedAt:row.updatedAt.toISOString()};await expect(administerRisk({...fixture,branchId:'foreign'},start,row.id)).rejects.toMatchObject({statusCode:409});
+ const running=await administerRisk(fixture,start,row.id);const close={status:'closed',expectedStatus:'mitigating',expectedUpdatedAt:running.updatedAt.toISOString(),completionNote:'Inspection closed'};
+ const closingAudit=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Resolution audit unavailable'));try{await expect(administerRisk(fixture,close,row.id)).rejects.toThrow('Resolution audit unavailable');}finally{closingAudit.mockRestore();}expect((await getRiskRecordModel().findById(row.id).lean())?.status).toBe('mitigating');
+ const results=await Promise.allSettled([administerRisk(fixture,close,row.id),administerRisk(fixture,close,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await getRiskRecordModel().findById(row.id).lean())?.completionNote).toBe('Inspection closed');expect(await quantityAt(fixture.warehouseId)).toBe(baseline);expect((await riskSummary(fixture)).counts.closed).toBe(1);expect((await riskSummary({...fixture,branchId:'foreign'})).total).toBe(0);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'riesgo',entityId:row.id})).toBe(3);expect((await pageRisks(fixture,{search:'A+B',status:'closed',limit:20})).items).toHaveLength(1);expect((await pageRisks(fixture,{search:'.*',limit:20})).items).toHaveLength(0);
+ await expect(administerRisk(fixture,{status:'dismissed',expectedStatus:'mitigating',expectedUpdatedAt:running.updatedAt.toISOString()},row.id)).rejects.toMatchObject({statusCode:409});
+});
+
+it('compliance records are scoped and close once with atomic audit and real summary',async()=>{
+ const baseline=await quantityAt(fixture.warehouseId);const input={name:'Equipment A+B',requirement:'Preventive inspection',dueDate:'2026-10-05',priority:'high'};
+ expect((await complianceSummary(fixture)).total).toBe(0);
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Quality audit unavailable'));try{await expect(administerCompliance(fixture,input)).rejects.toThrow('Quality audit unavailable');}finally{spy.mockRestore();}expect(await getComplianceControlModel().countDocuments({companyId:fixture.companyId})).toBe(0);
+ const row=await administerCompliance(fixture,input);const start={status:'reviewing',expectedStatus:'pending',expectedUpdatedAt:row.updatedAt.toISOString()};await expect(administerCompliance({...fixture,branchId:'foreign'},start,row.id)).rejects.toMatchObject({statusCode:409});
+ const running=await administerCompliance(fixture,start,row.id);const close={status:'completed',expectedStatus:'reviewing',expectedUpdatedAt:running.updatedAt.toISOString(),result:'pass',evidenceNote:'Inspection completed'};
+ const closingAudit=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Compliance audit unavailable'));try{await expect(administerCompliance(fixture,close,row.id)).rejects.toThrow('Compliance audit unavailable');}finally{closingAudit.mockRestore();}expect((await getComplianceControlModel().findById(row.id).lean())?.status).toBe('reviewing');
+ const results=await Promise.allSettled([administerCompliance(fixture,close,row.id),administerCompliance(fixture,close,row.id)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect((await getComplianceControlModel().findById(row.id).lean())?.evidenceNote).toBe('Inspection completed');expect(await quantityAt(fixture.warehouseId)).toBe(baseline);expect((await getComplianceControlModel().findById(row.id).lean())?.result).toBe('pass');expect((await complianceSummary(fixture)).counts.completed).toBe(1);expect((await complianceSummary({...fixture,branchId:'foreign'})).total).toBe(0);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'cumplimiento',entityId:row.id})).toBe(3);expect((await pageCompliance(fixture,{search:'A+B',status:'completed',limit:20})).items).toHaveLength(1);expect((await pageCompliance(fixture,{search:'.*',limit:20})).items).toHaveLength(0);
+ await expect(administerCompliance(fixture,{status:'cancelled',expectedStatus:'reviewing',expectedUpdatedAt:running.updatedAt.toISOString()},row.id)).rejects.toMatchObject({statusCode:409});
+});
+
+
+it('role creation is company scoped, prevents elevated grants and rolls back audit failures',async()=>{
+ const actor={...fixture,permissions:['usuarios.ver','productos.ver']};const input={name:'QA_READER',description:'Catalog reader',permissions:['productos.ver']};await expect(createAuditedRole(actor,{...input,permissions:['usuarios.editar']})).rejects.toMatchObject({statusCode:403});const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Role audit unavailable'));try{await expect(createAuditedRole(actor,input)).rejects.toThrow('Role audit unavailable');}finally{spy.mockRestore();}expect(await getRoleModel().countDocuments({companyId:fixture.companyId})).toBe(0);const row=await createAuditedRole(actor,input);expect(row.name).toBe('QA_READER');expect((await listRolesForCompany(fixture.companyId)).some(r=>r.id===row.id)).toBe(true);expect((await listRolesForCompany('foreign-company')).some(r=>r.id===row.id)).toBe(false);await expect(findAssignableRole(row.id,'foreign-company')).rejects.toMatchObject({statusCode:404});await expect(createAuditedRole(actor,input)).rejects.toMatchObject({statusCode:409});expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'roles',entityId:row.id})).toBe(1);await expect(createAuditedRole(actor,{...input,name:'ADMIN'})).rejects.toMatchObject({statusCode:409});const concurrent=await Promise.allSettled([createAuditedRole(actor,{...input,name:'CONCURRENT_READER'}),createAuditedRole(actor,{...input,name:'CONCURRENT_READER'})]);expect(concurrent.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(await getRoleModel().countDocuments({companyId:fixture.companyId,name:'CONCURRENT_READER'})).toBe(1);
+});
+
+it('editing a role updates assigned users across branches and revokes sessions atomically',async()=>{
+ const actor={...fixture,userId:'000000000000000000000009',permissions:['usuarios.ver','productos.ver']};const role=await createAuditedRole(actor,{name:'EDIT_READER',description:'Before edit',permissions:['usuarios.ver','productos.ver']});const users=[];for(const [index,branchId,companyId] of [[0,fixture.branchId,fixture.companyId],[1,'other-branch',fixture.companyId],[2,fixture.branchId,'foreign-company']] as const){users.push(await getUserModel().create({companyId,branchId,email:'role-edit-'+index+'-'+randomUUID()+'@example.test',passwordHash:'isolated-test-placeholder',name:'Role test',roleId:role.id,permissions:role.permissions,isActive:true,sessionVersion:4}));}
+ const payload={description:'Reduced access',permissions:['productos.ver'],expectedUpdatedAt:role.updatedAt};await expect(updateAuditedRole({...actor,companyId:'foreign'},role.id,payload)).rejects.toMatchObject({statusCode:409});await expect(updateAuditedRole({...actor,userId:String(users[0]._id)},role.id,payload)).rejects.toMatchObject({statusCode:403});await expect(updateAuditedRole(actor,role.id,{...payload,permissions:['usuarios.editar']})).rejects.toMatchObject({statusCode:403});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Role edit audit unavailable'));try{await expect(updateAuditedRole(actor,role.id,payload)).rejects.toThrow('Role edit audit unavailable');}finally{spy.mockRestore();}expect((await getRoleModel().findById(role.id).lean())?.description).toBe('Before edit');expect((await getUserModel().findById(users[0]._id).select('+sessionVersion').lean())?.sessionVersion).toBe(4);
+ const results=await Promise.allSettled([updateAuditedRole(actor,role.id,payload),updateAuditedRole(actor,role.id,payload)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);for(const user of users.slice(0,2)){const saved=await getUserModel().findById(user._id).select('+sessionVersion').lean();expect(saved?.permissions).toEqual(['productos.ver']);expect(saved?.sessionVersion).toBe(5);}expect((await getUserModel().findById(users[2]._id).select('+sessionVersion').lean())?.sessionVersion).toBe(4);expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'roles',entityId:role.id,action:'UPDATE'})).toBe(1);
+});
+
+it('concurrent user creation and role editing cannot leave stale permission copies',async()=>{
+ const actor={...fixture,userId:'000000000000000000000009',permissions:['usuarios.ver','productos.ver']};const role=await createAuditedRole(actor,{name:'RACE_READER',description:'Before race',permissions:actor.permissions});const results=await Promise.allSettled([createAuditedUserInMongo({name:'Race user',email:'race-'+randomUUID()+'@example.test',password:'Isolated-Test-Password-123',roleId:role.id,companyId:fixture.companyId,branchId:fixture.branchId,actorPermissions:actor.permissions},{userId:actor.userId}),updateAuditedRole(actor,role.id,{description:'After race',permissions:['productos.ver'],expectedUpdatedAt:role.updatedAt})]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);const savedRole=await getRoleModel().findById(role.id).lean();const assigned=await getUserModel().findOne({companyId:fixture.companyId,roleId:role.id}).lean();expect(assigned?.permissions).toEqual(savedRole?.permissions);expect(savedRole?.permissions).toEqual(['productos.ver']);
+});
 });

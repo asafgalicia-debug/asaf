@@ -1,4 +1,6 @@
-﻿import { AppError } from '../../errors/AppError.js';
+import {catalogSlice} from '../../core/catalogPagination.js';
+import type {NotificationQuery} from './notificationPagination.js';
+import { AppError } from '../../errors/AppError.js';
 import { getUserModel } from '../usuarios/models/User.js';
 import { getNotificationModel, type NotificationChannel } from './models/Notification.js';
 
@@ -33,11 +35,20 @@ export async function createNotification(input: {
 }
 
 export async function markNotificationRead(companyId: string, branchId: string, userId: string, notificationId: string): Promise<Record<string, unknown>> {
+  if(!/^[a-f0-9]{24}$/i.test(notificationId))throw new AppError({code:'VALIDATION_ERROR',message:'Invalid notification identifier',friendlyMessage:'Selecciona un aviso válido.',statusCode:400});
   const row = await getNotificationModel().findOneAndUpdate(
-    { _id: notificationId, companyId, branchId, userId },
+    { _id: notificationId, companyId, branchId, userId, channel: 'IN_APP', status: {$in: ['SENT','READ']} },
     { $set: { status: 'READ' } },
     { new: true }
   ).lean().exec();
   if (!row) throw new AppError({ code: 'NOT_FOUND', message: 'Notification not found', friendlyMessage: 'La notificaciÃ³n no existe en tu bandeja.', statusCode: 404 });
   return serialize(row as Record<string, any>);
+}
+
+export async function pageNotifications(companyId:string,branchId:string,userId:string,query:NotificationQuery){
+ const filter:Record<string,unknown>={companyId,branchId,userId,channel:'IN_APP',status:query.status??{$in:['SENT','READ']}};
+ if(query.cursor)filter._id={$lt:query.cursor};
+ const rows=await getNotificationModel().find(filter).sort({_id:-1}).limit(query.limit+1).lean().exec();
+ const page=catalogSlice(rows,query.limit);
+ return {items:page.items.map(row=>({...row,isRead:row.status==='READ'})),nextCursor:page.nextCursor};
 }

@@ -2,7 +2,8 @@
   "expo": {
     "name": "ERP Universal Modular",
     "slug": "erp-universal-modular",
-    "version": "1.0.0",
+    "version": "1.0.1",
+    "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
@@ -12,7 +13,8 @@
       "**/*"
     ],
     "android": {
-      "package": "com.anonymous.erpuniversalmodular"
+      "package": "com.anonymous.erpuniversalmodular",
+      "versionCode": 2
     }
   }
 }

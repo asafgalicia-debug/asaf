@@ -1,0 +1,4 @@
+import mongoose,{Schema,type Model} from 'mongoose';
+export type ManagedAssetDocument={companyId:string;branchId:string;name:string;code:string;location:string;status:'operational'|'maintenance'|'offline'|'retired';createdAt:Date;updatedAt:Date};
+const schema=new Schema<ManagedAssetDocument>({companyId:{type:String,required:true},branchId:{type:String,required:true},name:{type:String,required:true,maxlength:120},code:{type:String,required:true,maxlength:32},location:{type:String,required:true,maxlength:200},status:{type:String,required:true,enum:['operational','maintenance','offline','retired']}},{timestamps:true});schema.index({companyId:1,branchId:1,code:1},{unique:true});schema.index({companyId:1,branchId:1,_id:-1});
+export function getManagedAssetModel():Model<ManagedAssetDocument>{return mongoose.models.ManagedAsset??mongoose.model<ManagedAssetDocument>('ManagedAsset',schema);}

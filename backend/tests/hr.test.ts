@@ -1,4 +1,4 @@
-vi.mock('../src/modules/empresas/models/Department.js',()=>({getDepartmentModel:()=>({exists:(f:any)=>({session:async()=>f._id==='dept-1'&&f.companyId==='co-1'&&f.branchId==='br-1'&&f.status==='ACTIVE'})})}));
+vi.mock('../src/modules/empresas/models/Department.js',()=>({getDepartmentModel:()=>({findOneAndUpdate:(f:any)=>{const q:any={lean:()=>q,exec:async()=>f._id==='dept-1'&&f.companyId==='co-1'&&f.branchId==='br-1'&&f.status==='ACTIVE'?{_id:'dept-1'}:null};return q;}})}));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ rows: [] as any[] }));
 vi.mock('../src/modules/usuarios/models/User.js', () => ({ getUserModel: () => ({ exists: (filter: any) => ({session: async()=> filter.companyId === 'co-1' && filter.branchId === 'br-1' && filter._id === 'user-1'}) }) }));

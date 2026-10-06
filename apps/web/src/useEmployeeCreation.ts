@@ -1,10 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {ApiError} from './webApi';
 import {employeeOptions,saveEmployee,type EmployeeOption} from './employeeCreationApi';
-export function useEmployeeOptions(base:string,token:string,companyId:string,branchId:string,kind:'users'|'departments',onExpired?:()=>void){
+export function useEmployeeOptions(base:string,token:string,companyId:string,branchId:string,kind:'users'|'departments',onExpired?:()=>void,purpose:'create'|'edit'='create'){
  const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[cursors,setCursors]=useState<Array<string|undefined>>([undefined]),[items,setItems]=useState<EmployeeOption[]>([]),[nextCursor,setNext]=useState<string|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[selected,setSelected]=useState<EmployeeOption|null>(null),[revision,setRevision]=useState(0);
  const cursor=cursors[cursors.length-1];
- useEffect(()=>{const c=new AbortController();setLoading(true);setError('');setItems([]);setNext(null);employeeOptions(base,token,companyId,branchId,kind,query,cursor,c.signal).then(p=>{if(!c.signal.aborted){setItems(p.items);setNext(p.nextCursor);}}).catch(e=>{if(!c.signal.aborted){if(e instanceof ApiError&&e.status===401)onExpired?.();setError(e instanceof Error?e.message:'No se pudo consultar el selector.');}}).finally(()=>{if(!c.signal.aborted)setLoading(false);});return()=>c.abort();},[base,token,companyId,branchId,kind,query,cursor,revision,onExpired]);
+ useEffect(()=>{const c=new AbortController();setLoading(true);setError('');setItems([]);setNext(null);employeeOptions(base,token,companyId,branchId,kind,query,cursor,c.signal,purpose).then(p=>{if(!c.signal.aborted){setItems(p.items);setNext(p.nextCursor);}}).catch(e=>{if(!c.signal.aborted){if(e instanceof ApiError&&e.status===401)onExpired?.();setError(e instanceof Error?e.message:'No se pudo consultar el selector.');}}).finally(()=>{if(!c.signal.aborted)setLoading(false);});return()=>c.abort();},[base,token,companyId,branchId,kind,query,cursor,revision,onExpired,purpose]);
  return {search,setSearch,items,loading,error,selected,setSelected,page:cursors.length,apply:()=>{setQuery(search.trim());setCursors([undefined]);setRevision(r=>r+1);},previous:()=>setCursors(c=>c.slice(0,-1)),next:()=>{if(nextCursor)setCursors(c=>[...c,nextCursor]);},hasNext:!!nextCursor};
 }
 export function useEmployeeCreation(base:string,token:string,companyId:string,branchId:string,onSaved:()=>void,onExpired?:()=>void){

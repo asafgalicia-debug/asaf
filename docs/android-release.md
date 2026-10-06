@@ -49,5 +49,12 @@ actualmente en Gradle. Sirve para instalar y probar la aplicacion. Para publicar
 en Google Play se necesita configurar una clave de firma propia, generar el
 Android App Bundle y revisar los requisitos vigentes de la tienda.
 
-La interfaz movil actual es una vista previa; sus modulos aun no estan
-conectados a la API. Compilar el APK no agrega esa integracion.
+Los modulos implementados de la interfaz movil se conectan a la API configurada
+en EXPO_PUBLIC_API_URL durante la compilacion. La demostracion de 2,000 productos
+se mantiene separada de los datos de la empresa.
+
+Si Android Studio muestra "El proveedor de archivos de nube no se esta ejecutando",
+abra el proyecto Android de una copia local fuera de OneDrive. En esta maquina
+la copia de compilacion es
+`C:\Users\asafg\AppData\Local\Temp\nucleo-erp-selectores-20261003\apps\mobile\android`.
+No es necesario borrar el proyecto original ni los datos de la aplicacion.

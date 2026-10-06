@@ -1,11 +1,12 @@
-﻿import { Router, type Request } from 'express';
+import {parseNotificationQuery} from './notificationPagination.js';
+import { Router, type Request } from 'express';
 
 import { logAuditEvent } from '../../audit/auditLogger.js';
 import { AppError } from '../../errors/AppError.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { tenant } from '../../middleware/tenant.js';
-import { createNotification, listNotifications, markNotificationRead } from './notificationService.js';
+import { createNotification, listNotifications, markNotificationRead, pageNotifications } from './notificationService.js';
 import type { NotificationChannel } from './models/Notification.js';
 
 const channels: NotificationChannel[] = ['EMAIL', 'PUSH', 'IN_APP'];
@@ -22,6 +23,9 @@ export function createNotificationRoutes(): Router {
       const context = getContext(req);
       res.json({ ok: true, data: await listNotifications(context.companyId, context.branchId, context.userId) });
     } catch (error) { next(error); }
+  });
+  router.get('/page', authenticate, tenant, authorize('notificaciones.ver'), async(req,res,next)=>{
+    try{const c=getContext(req);res.json({ok:true,data:await pageNotifications(c.companyId,c.branchId,c.userId,parseNotificationQuery(req.query))});}catch(error){next(error);}
   });
   router.post('/', authenticate, tenant, authorize('notificaciones.configurar'), async (req, res, next) => {
     try {

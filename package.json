@@ -15,19 +15,14 @@
     "start:api": "npm --workspace backend run start",
     "start:web": "npm --workspace apps/web run dev -- --host 0.0.0.0",
     "build": "npm --workspace backend run build && npm --workspace apps/web run build",
-    "test": "npm --workspace backend run test",
+    "test": "npm --workspace backend run test && npm --workspace apps/mobile run test",
     "lint": "npm --workspace backend run lint && npm --workspace apps/web run lint",
     "typecheck": "npm --workspace backend run typecheck && npm --workspace apps/web run typecheck && npm --workspace apps/mobile run typecheck",
     "android": "npm --workspace apps/mobile run android",
     "android:release": "node scripts/build-android.cjs",
+    "test:android-config": "node --test scripts/android-release-config.test.cjs",
+    "check:react-workspaces": "node scripts/check-react-workspaces.cjs",
+    "check:mobile-bundle-react": "node scripts/check-mobile-bundle-react.cjs",
     "ios": "npm --workspace apps/mobile run ios"
-  },
-  "dependencies": {
-    "expo": "~52.0.49",
-    "react": "18.3.1",
-    "react-native": "0.76.9"
-  },
-  "devDependencies": {
-    "@react-native/js-polyfills": "0.76.9"
   }
 }

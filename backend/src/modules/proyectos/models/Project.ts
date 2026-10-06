@@ -7,5 +7,6 @@ const schema = new Schema<ProjectDocument>({
   progress: { type: Number, default: 0, min: 0, max: 100 }, startDate: { type: String, required: true }, endDate: { type: String, required: true }
 }, { timestamps: true });
 schema.index({ companyId: 1, branchId: 1, status: 1, endDate: 1 });
+schema.index({ companyId: 1, branchId: 1, _id: -1 });
 let model: Model<ProjectDocument> | undefined;
 export function getProjectModel(): Model<ProjectDocument> { if (!model) model = mongoose.models.Project ?? mongoose.model<ProjectDocument>('Project', schema); return model; }

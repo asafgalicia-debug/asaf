@@ -1,0 +1,8 @@
+import {ApiError,requestData} from './webApi';import type {DirectoryUser} from './userDirectoryApi';import type {AssignableRole} from './userCreationApi';
+export async function changeUserAccess(base:string,token:string,original:DirectoryUser,change:{isActive:boolean}|{roleId:string},role?:AssignableRole,signal?:AbortSignal):Promise<DirectoryUser>{
+ const isRole='roleId' in change; if(isRole&&(!role||role.id!==change.roleId))throw new ApiError('Selecciona un rol válido.',400);
+ const expected={roleId:original.roleId,isActive:original.isActive,permissions:original.permissions};let raw:any;
+ try{raw=await requestData(base,'/users/'+encodeURIComponent(original.id)+'/access',{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({expected,change}),signal});}catch(e){if(e instanceof ApiError&&e.status===409)throw new ApiError('El acceso cambió. Cierra y actualiza la lista.',409);throw e;}
+ const permissions=isRole?role!.permissions:original.permissions;
+ if(!raw||raw.id!==original.id||raw.companyId!==original.companyId||raw.branchId!==original.branchId||raw.name!==original.name||raw.email!==original.email||raw.isActive!==(isRole?original.isActive:(change as {isActive:boolean}).isActive)||raw.roleId!==(isRole?role!.id:original.roleId)||!Array.isArray(raw.permissions)||JSON.stringify([...raw.permissions].sort())!==JSON.stringify([...permissions].sort())||Object.keys(raw).some(k=>/password|verificationHash|sessionVersion/i.test(k)))throw new ApiError('No se pudo confirmar el cambio. Consulta la lista antes de reintentar.');return raw;
+}

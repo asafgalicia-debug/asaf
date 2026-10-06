@@ -1,0 +1,22 @@
+import {beforeAll,afterAll,expect,it,vi} from 'vitest';
+import express from 'express';
+import type {Server} from 'node:http';
+import type {AddressInfo} from 'node:net';
+const state=vi.hoisted(()=>({page:vi.fn()}));
+vi.mock('../src/middleware/authenticate.js',()=>({authenticate:(req:any,res:any,next:any)=>req.headers.authorization?next():res.sendStatus(401)}));
+vi.mock('../src/middleware/tenant.js',()=>({tenant:(req:any,_:any,next:any)=>{req.tenant={companyId:'co',branchId:'br',userId:'owner'};next();}}));
+vi.mock('../src/middleware/authorize.js',()=>({authorize:(permission:string)=>(req:any,res:any,next:any)=>permission==='notificaciones.ver'&&req.headers.authorization==='Bearer reader'?next():res.sendStatus(403)}));
+vi.mock('../src/modules/notificaciones/notificationService.js',()=>({pageNotifications:state.page,listNotifications:vi.fn(),createNotification:vi.fn(),markNotificationRead:vi.fn()}));
+import {createNotificationRoutes} from '../src/modules/notificaciones/notificationRoutes.js';
+let server:Server,base:string;
+beforeAll(async()=>{const app=express();app.use('/notifications',createNotificationRoutes());app.use((e:any,_:any,res:any,__:any)=>res.status(e.statusCode??500).json({error:e.code}));server=app.listen(0);await new Promise<void>(r=>server.once('listening',r));base='http://127.0.0.1:'+(server.address() as AddressInfo).port;});
+afterAll(async()=>{await new Promise<void>(r=>server.close(()=>r()));});
+it('inbox route authorizes before reads, forbids owner override and derives all scope from session',async()=>{
+ state.page.mockReset();state.page.mockResolvedValue({items:[],nextCursor:null});
+ expect((await fetch(base+'/notifications/page')).status).toBe(401);
+ expect((await fetch(base+'/notifications/page',{headers:{Authorization:'Bearer denied'}})).status).toBe(403);
+ expect((await fetch(base+'/notifications/page?userId=other',{headers:{Authorization:'Bearer reader'}})).status).toBe(400);
+ expect(state.page).not.toHaveBeenCalled();
+ expect((await fetch(base+'/notifications/page?status=SENT',{headers:{Authorization:'Bearer reader'}})).status).toBe(200);
+ expect(state.page).toHaveBeenCalledWith('co','br','owner',{limit:20,status:'SENT'});
+});
