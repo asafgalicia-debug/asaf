@@ -6,6 +6,7 @@ export type RoleDocument = {
   permissions: string[];
   companyId?: string;
   isSystem: boolean;
+  isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -16,7 +17,8 @@ const roleSchema = new Schema<RoleDocument>(
     description: { type: String, required: true, trim: true },
     permissions: [{ type: String, trim: true }],
     companyId: { type: String, required: false, index: true },
-    isSystem: { type: Boolean, default: false }
+    isSystem: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true }
   },
   { timestamps: true }
 );

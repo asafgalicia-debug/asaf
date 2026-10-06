@@ -2,6 +2,22 @@
 
 Estado al 5 de octubre de 2026. La existencia de una API o de pruebas aprobadas no equivale a un módulo completo ni a una revisión de uso real.
 
+## Estado vigente: 6 de octubre de 2026
+
+La actualización 95c4aee ya se publicó en Render. API y web confirman la versión del 6 de octubre; la APK 1.0.1 se instaló y abrió en el emulador Pixel 7, mostrando API conectada. Las notas inferiores de cambios sin publicar son antecedentes de esa publicación. El registro de entrega está en `output/revision-publicacion-20261006.md`.
+
+Después de esa publicación se implementaron localmente:
+
+- Roles: desactivación y reactivación auditadas; no se permite desactivar roles con usuarios asignados en ninguna sucursal, incluidos usuarios inactivos. No se pueden asignar ni editar roles inactivos. Protección transaccional ante asignación simultánea, auditoría fallida y cambios de versión.
+- Roles: catálogo web/móvil paginado desde el servidor, búsquedas literales, límite máximo 50 y visibilidad según permisos del actor. Los roles inactivos se conservan para administración y reactivación; se excluyen de asignación.
+- Empresa y sucursales: pantallas web/móvil con consulta de la empresa actual, edición de nombre e identificador fiscal, creación/edición auditadas de sucursales, búsqueda paginada y PDF/Excel individual. Las operaciones se limitan a la empresa de la sesión. Cambiar datos no cambia la sucursal activa ni valida identificadores ante autoridades fiscales.
+
+Verificación de estos cambios: 355 pruebas generales de API, 65 pruebas con MongoDB aislado y 251 pruebas de clientes web/móvil aprobadas; compilaciones API/web y tipos móviles aprobados. Estos cambios posteriores todavía no están en la web desplegada ni en la APK 1.0.1 entregada.
+
+También se añadió edición del nombre, plan de mitigación, fecha de revisión y nivel de riesgos abiertos en web/móvil. Conserva el estado; cerrado/descartado sigue protegido. La edición y auditoría son atómicas, con control de versión y protección ante cierre simultáneo. Verificación acumulada posterior: 355 pruebas generales de API, 66 de MongoDB aislado y 253 de clientes; API/web compilados y tipos móviles aprobados. Avance local pendiente de publicación y revisión autenticada.
+
+Siguen pendientes la revisión visual autenticada, archivos reales en teléfono, administración del acceso de usuarios a otras sucursales y estados de sucursales/empresa, producción avanzada, emisión fiscal e integraciones. La problemática del documento continúa excluida. No declarar terminado todo el ERP con estos pendientes.
+
 ## Implementación local pendiente de publicación
 
 - Usuarios y acceso: directorio, creación, cambio de nombre/rol/estado y revocación de sesiones.

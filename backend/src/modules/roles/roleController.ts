@@ -1,3 +1,5 @@
+import {pageCompanyRoles} from './rolePagination.js';
+import { changeRoleStatus } from './roleStatusService.js';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AppError } from '../../errors/AppError.js';
@@ -42,3 +44,13 @@ export async function createRoleController(req: Request, res: Response, next: Ne
   } catch (error) { next(error); }
 }
 export async function updateRoleController(req:Request,res:Response,next:NextFunction){try{const companyId=requireCompanyId(req),branchId=req.tenant?.branchId,userId=req.user?.id;if(!branchId||!userId)throw new AppError({code:'UNAUTHORIZED',message:'Missing actor',friendlyMessage:'Inicia sesión de nuevo.',statusCode:401});res.json({ok:true,data:await updateAuditedRole({companyId,branchId,userId,permissions:req.user?.permissions??[],ipAddress:req.ip},String(req.params.id),req.body)});}catch(e){next(e);}}
+
+export async function roleStatusController(req: Request, res: Response, next: NextFunction) {
+ try {
+ const companyId = requireCompanyId(req), branchId = req.tenant?.branchId, userId = req.user?.id;
+ if (!branchId || !userId) throw new AppError({code:"UNAUTHORIZED",message:"Missing actor",friendlyMessage:"Inicia sesión de nuevo.",statusCode:401});
+ res.json({ok:true,data:await changeRoleStatus({companyId,branchId,userId,permissions:req.user?.permissions??[],ipAddress:req.ip},String(req.params.id),req.body)});
+ } catch (error) { next(error); }
+}
+
+export async function pageRolesController(req:Request,res:Response,next:NextFunction){try{res.json({ok:true,data:await pageCompanyRoles(requireCompanyId(req),req.user?.permissions??[],req.query)});}catch(error){next(error);}}

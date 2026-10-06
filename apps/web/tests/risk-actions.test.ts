@@ -1,3 +1,4 @@
+import {saveRiskDetails,validRiskEdit} from '../src/riskApi';
 import {riskDocument} from '../src/operationsDocument';
 import {test} from 'node:test';import assert from 'node:assert/strict';import {saveRisk,validRiskInput} from '../src/riskApi';
 const input={name:'Pump',mitigationPlan:'Inspection',reviewDate:'2026-10-06',level:'high' as const,status:'mitigating' as const,completionNote:''};const row={...input,id:'000000000000000000000003',companyId:'co',branchId:'br',status:'identified' as const,updatedAt:'2026-10-06T00:00:00Z'};
@@ -5,3 +6,13 @@ test('risk creation sends only order fields and validates confirmation',async t=
 test('risk completion sends original snapshot and requires exact result',async t=>{const old=globalThis.fetch;t.after(()=>{globalThis.fetch=old;});const original={...row,status:'mitigating' as const};const change={...input,status:'closed' as const,completionNote:' Inspection closed '};assert.equal(validRiskInput({...change,completionNote:''},original),false);assert.equal(validRiskInput(change,row),false);globalThis.fetch=async(url,options)=>{assert.equal(String(url),'api/risk-management/risks/'+row.id+'/status');assert.deepEqual(JSON.parse(String(options?.body)),{status:'closed',expectedStatus:'mitigating',expectedUpdatedAt:row.updatedAt,completionNote:'Inspection closed'});return new Response(JSON.stringify({data:{...row,status:'closed',completionNote:'Inspection closed'}}));};assert.equal((await saveRisk('api','token','co','br',change,original)).completionNote,'Inspection closed');for(const raw of [{...row,status:'closed',completionNote:'Wrong result'},{...row,status:'closed',completionNote:'Inspection closed',name:'Other'}]){globalThis.fetch=async()=>new Response(JSON.stringify({data:raw}));await assert.rejects(saveRisk('api','token','co','br',change,original));}});
 
 test('risk export preserves resolution and does not imply contracted SLA',()=>{const doc=riskDocument({...row,status:'closed',completionNote:'Access restored'});assert.deepEqual(doc.rows,[[row.name,row.mitigationPlan,row.reviewDate,'Alto','Cerrado','Access restored']]);assert.match(doc.note!,/cualitativa/);assert.equal(validRiskInput({...input,status:'dismissed'}, {...row,status:'closed'}),false);});
+
+test('risk plan edits send a snapshot, preserve state and protect final records',async t=>{
+ const old=globalThis.fetch;t.after(()=>{globalThis.fetch=old;});
+ const row={id:'000000000000000000000003',companyId:'co',branchId:'br',name:'Risk',mitigationPlan:'Original plan',reviewDate:'2026-10-06',level:'medium' as const,status:'mitigating' as const,updatedAt:'2026-10-06T00:00:00Z'};
+ const input={...row,mitigationPlan:'Updated plan',level:'high' as const,completionNote:''};
+ assert.equal(validRiskEdit(input,{...row,status:'closed',completionNote:'Resolved'}),false);
+ globalThis.fetch=async(url,opts)=>{assert.equal(String(url),'api/risk-management/risks/'+row.id);assert.deepEqual(JSON.parse(String(opts?.body)),{name:row.name,mitigationPlan:'Updated plan',reviewDate:row.reviewDate,level:'high',expectedStatus:row.status,expectedUpdatedAt:row.updatedAt});return new Response(JSON.stringify({data:{...row,mitigationPlan:'Updated plan',level:'high',updatedAt:'2026-10-06T00:00:01Z'}}));};
+ assert.equal((await saveRiskDetails('api','token','co','br',input,row)).status,'mitigating');
+ for(const patch of [{status:'closed'},{branchId:'foreign'},{updatedAt:row.updatedAt},{completionNote:'Unexpected'}]){globalThis.fetch=async()=>new Response(JSON.stringify({data:{...row,mitigationPlan:'Updated plan',level:'high',updatedAt:'2026-10-06T00:00:01Z',...patch}}));await assert.rejects(saveRiskDetails('api','token','co','br',input,row));}
+});

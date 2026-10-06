@@ -1,3 +1,8 @@
+import {editRiskDetails} from '../src/modules/riskManagement/riskAdministration.js';
+import {getCompanyModel} from '../src/modules/empresas/models/Company.js';
+import {saveOrganization,pageCompanyBranches,readCurrentCompany} from '../src/modules/empresas/organizationAdministration.js';
+import {pageCompanyRoles} from '../src/modules/roles/rolePagination.js';
+import {changeRoleStatus} from '../src/modules/roles/roleStatusService.js';
 import {updateAuditedRole,createAuditedRole,listRolesForCompany,findAssignableRole} from '../src/modules/roles/roleService.js';
 import {getRoleModel} from '../src/modules/roles/models/Role.js';
 import {administerCompliance,pageCompliance,complianceSummary} from '../src/modules/compliance/complianceAdministration.js';
@@ -812,4 +817,97 @@ it('editing a role updates assigned users across branches and revokes sessions a
 it('concurrent user creation and role editing cannot leave stale permission copies',async()=>{
  const actor={...fixture,userId:'000000000000000000000009',permissions:['usuarios.ver','productos.ver']};const role=await createAuditedRole(actor,{name:'RACE_READER',description:'Before race',permissions:actor.permissions});const results=await Promise.allSettled([createAuditedUserInMongo({name:'Race user',email:'race-'+randomUUID()+'@example.test',password:'Isolated-Test-Password-123',roleId:role.id,companyId:fixture.companyId,branchId:fixture.branchId,actorPermissions:actor.permissions},{userId:actor.userId}),updateAuditedRole(actor,role.id,{description:'After race',permissions:['productos.ver'],expectedUpdatedAt:role.updatedAt})]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(2);const savedRole=await getRoleModel().findById(role.id).lean();const assigned=await getUserModel().findOne({companyId:fixture.companyId,roleId:role.id}).lean();expect(assigned?.permissions).toEqual(savedRole?.permissions);expect(savedRole?.permissions).toEqual(['productos.ver']);
 });
+it('role status rolls back audit failures, rejects stale or foreign edits and can reactivate',async()=>{
+ const actor={...fixture,userId:'000000000000000000000009',permissions:['productos.ver']};
+ const row=await createAuditedRole(actor,{name:'STATUS_READER',description:'Status test',permissions:actor.permissions});
+ const payload={isActive:false,expectedUpdatedAt:row.updatedAt};
+ await expect(changeRoleStatus({...actor,companyId:'foreign'},row.id,payload)).rejects.toMatchObject({statusCode:409});
+ await expect(changeRoleStatus({...actor,permissions:[]},row.id,payload)).rejects.toMatchObject({statusCode:403});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Status audit unavailable'));
+ try{await expect(changeRoleStatus(actor,row.id,payload)).rejects.toThrow('Status audit unavailable');}finally{spy.mockRestore();}
+ expect((await getRoleModel().findById(row.id).lean())?.isActive).toBe(true);
+ const results=await Promise.allSettled([changeRoleStatus(actor,row.id,payload),changeRoleStatus(actor,row.id,payload)]);
+ expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ await expect(findAssignableRole(row.id,fixture.companyId)).rejects.toMatchObject({statusCode:404});
+ await expect(updateAuditedRole(actor,row.id,{description:'Cannot edit',permissions:actor.permissions,expectedUpdatedAt:row.updatedAt})).rejects.toMatchObject({statusCode:409});
+ const inactive=(await listRolesForCompany(fixture.companyId)).find(r=>r.id===row.id)!;expect(inactive.isActive).toBe(false);
+ const active=await changeRoleStatus(actor,row.id,{isActive:true,expectedUpdatedAt:inactive.updatedAt});expect(active.isActive).toBe(true);
+ expect((await findAssignableRole(row.id,fixture.companyId)).isActive).toBe(true);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'roles',entityId:row.id,action:'UPDATE'})).toBe(2);
+});
+it('an inactive assigned user in another branch blocks role deactivation',async()=>{
+ const actor={...fixture,userId:'000000000000000000000009',permissions:['productos.ver']};
+ const row=await createAuditedRole(actor,{name:'ASSIGNED_READER',description:'Assigned test',permissions:actor.permissions});
+ await getUserModel().create({companyId:fixture.companyId,branchId:'other-branch',email:'assigned-'+randomUUID()+'@example.test',passwordHash:'isolated-test-placeholder',name:'Assigned',roleId:row.id,permissions:row.permissions,isActive:false});
+ await expect(changeRoleStatus(actor,row.id,{isActive:false,expectedUpdatedAt:row.updatedAt})).rejects.toMatchObject({statusCode:409});
+ expect((await getRoleModel().findById(row.id).lean())?.isActive).toBe(true);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'roles',entityId:row.id,action:'UPDATE'})).toBe(0);
+});
+it('concurrent assignment and deactivation cannot assign an inactive role',async()=>{
+ const actor={...fixture,userId:'000000000000000000000009',permissions:['productos.ver']};
+ const row=await createAuditedRole(actor,{name:'STATUS_RACE',description:'Race test',permissions:actor.permissions});
+ const results=await Promise.allSettled([createAuditedUserInMongo({name:'Race status',email:'status-race-'+randomUUID()+'@example.test',password:'Isolated-Test-Password-123',roleId:row.id,companyId:fixture.companyId,branchId:fixture.branchId,actorPermissions:actor.permissions},{userId:actor.userId}),changeRoleStatus(actor,row.id,{isActive:false,expectedUpdatedAt:row.updatedAt})]);
+ expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ const assigned=await getUserModel().exists({companyId:fixture.companyId,roleId:row.id});
+ expect((await getRoleModel().findById(row.id).lean())?.isActive).toBe(!!assigned);
+});
+
+it('role pages filter company and held permissions, search literally and retain inactive records',async()=>{
+ const actor={...fixture,userId:'000000000000000000000009',permissions:['productos.ver']};
+ const rows=[];for(const name of ['PAGE A+B','PAGE B','PAGE C'])rows.push(await createAuditedRole(actor,{name,description:'Page test',permissions:actor.permissions}));
+ await changeRoleStatus(actor,rows[0].id,{isActive:false,expectedUpdatedAt:rows[0].updatedAt});
+ await getRoleModel().create([{companyId:fixture.companyId,name:'PAGE HIGH',description:'Higher grants',permissions:['usuarios.editar']},{companyId:'foreign-'+fixture.companyId,name:'PAGE FOREIGN',description:'Other company',permissions:actor.permissions}]);
+ const first=await pageCompanyRoles(fixture.companyId,actor.permissions,{page:1,limit:2,search:'PAGE'});expect(first.total).toBe(3);expect(first.items.map(r=>r.name)).toEqual(['PAGE A+B','PAGE B']);expect(first.items[0].isActive).toBe(false);
+ const second=await pageCompanyRoles(fixture.companyId,actor.permissions,{page:2,limit:2,search:'PAGE'});expect(second.items.map(r=>r.name)).toEqual(['PAGE C']);
+ expect((await pageCompanyRoles(fixture.companyId,actor.permissions,{search:'A+B'})).total).toBe(1);
+ expect((await pageCompanyRoles(fixture.companyId,actor.permissions,{search:'.*'})).total).toBe(0);
+ expect((await pageCompanyRoles(fixture.companyId,actor.permissions,{page:99,limit:2})).items).toHaveLength(0);
+ await expect(pageCompanyRoles(fixture.companyId,actor.permissions,{limit:51})).rejects.toMatchObject({statusCode:400});
+});
+
+it('organization edits are scoped, concurrent changes conflict and audit failures roll back',async()=>{
+ await getCompanyModel().create({_id:fixture.companyId,name:'Original company',taxId:'QA-TEST',status:'ACTIVE'});
+ const original=await readCurrentCompany(fixture.companyId);
+ const payload={name:'Updated company',taxId:' qa-updated ',expectedUpdatedAt:original.updatedAt};
+ await expect(saveOrganization(fixture,'company',{...payload,companyId:'foreign'})).rejects.toMatchObject({statusCode:400});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Organization audit unavailable'));
+ try{await expect(saveOrganization(fixture,'company',payload)).rejects.toThrow('Organization audit unavailable');}finally{spy.mockRestore();}
+ expect((await readCurrentCompany(fixture.companyId)).name).toBe('Original company');
+ const results=await Promise.allSettled([saveOrganization(fixture,'company',payload),saveOrganization(fixture,'company',payload)]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ expect((await readCurrentCompany(fixture.companyId)).taxId).toBe('QA-UPDATED');
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'empresas',action:'UPDATE'})).toBe(1);
+});
+it('branch creation and editing preserve company boundaries, uniqueness and atomic audit',async()=>{
+ await getCompanyModel().create({_id:fixture.companyId,name:'Test company',taxId:'QA-TEST',status:'ACTIVE'});
+ const input={name:'Branch A+B',code:' qa-branch ',city:'Test city'};
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Branch audit unavailable'));
+ try{await expect(saveOrganization(fixture,'branch',input)).rejects.toThrow('Branch audit unavailable');}finally{spy.mockRestore();}
+ expect(await getBranchModel().countDocuments({companyId:fixture.companyId,code:'QA-BRANCH'})).toBe(0);
+ const row=await saveOrganization(fixture,'branch',input);expect('code' in row&&row.code).toBe('QA-BRANCH');
+ await expect(saveOrganization(fixture,'branch',input)).rejects.toMatchObject({statusCode:409});
+ await expect(saveOrganization(fixture,'branch',{...input,city:'Other city',expectedUpdatedAt:row.updatedAt},fixture.destinationWarehouseId)).rejects.toMatchObject({statusCode:409});
+ const edits=await Promise.allSettled([saveOrganization(fixture,'branch',{...input,city:'Updated city',expectedUpdatedAt:row.updatedAt},row.id),saveOrganization(fixture,'branch',{...input,city:'Other city',expectedUpdatedAt:row.updatedAt},row.id)]);expect(edits.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ expect((await pageCompanyBranches(fixture.companyId,{search:'A+B'})).items.map(r=>r.id)).toEqual([row.id]);
+ expect((await pageCompanyBranches(fixture.companyId,{search:'.*'})).total).toBe(0);
+ expect((await pageCompanyBranches('foreign-company',{})).total).toBe(0);
+ expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,module:'sucursales',entityId:row.id})).toBe(2);
+});
+
+it('risk plan edits preserve state, isolate branches and roll back audit failures',async()=>{
+ const row=await administerRisk(fixture,{name:'Risk edit',mitigationPlan:'Initial plan',reviewDate:'2026-10-06',level:'medium'});
+ const data={name:row.name,mitigationPlan:'Updated plan',reviewDate:'2026-10-07',level:'high',expectedStatus:'identified',expectedUpdatedAt:row.updatedAt.toISOString()};
+ await expect(editRiskDetails({...fixture,branchId:'foreign'},row.id,data)).rejects.toMatchObject({statusCode:409});
+ const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Risk edit audit unavailable'));
+ try{await expect(editRiskDetails(fixture,row.id,data)).rejects.toThrow('Risk edit audit unavailable');}finally{spy.mockRestore();}
+ expect((await getRiskRecordModel().findById(row.id).lean())?.mitigationPlan).toBe('Initial plan');
+ const edits=await Promise.allSettled([editRiskDetails(fixture,row.id,data),editRiskDetails(fixture,row.id,data)]);expect(edits.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ const saved=await getRiskRecordModel().findById(row.id).lean();expect(saved?.status).toBe('identified');expect(saved?.mitigationPlan).toBe('Updated plan');
+ const running=await administerRisk(fixture,{status:'mitigating',expectedStatus:'identified',expectedUpdatedAt:saved!.updatedAt.toISOString()},row.id);
+ const close={status:'closed',expectedStatus:'mitigating',expectedUpdatedAt:running.updatedAt.toISOString(),completionNote:'Resolved risk'};
+ const race=await Promise.allSettled([administerRisk(fixture,close,row.id),editRiskDetails(fixture,row.id,{...data,mitigationPlan:'Competing plan',expectedStatus:'mitigating',expectedUpdatedAt:running.updatedAt.toISOString()})]);expect(race.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+ const latest=await getRiskRecordModel().findById(row.id).lean();
+ if(latest!.status==='mitigating')await administerRisk(fixture,{...close,expectedUpdatedAt:latest!.updatedAt.toISOString()},row.id);
+ await expect(editRiskDetails(fixture,row.id,{...data,expectedStatus:'mitigating',expectedUpdatedAt:(await getRiskRecordModel().findById(row.id).lean())!.updatedAt.toISOString()})).rejects.toMatchObject({statusCode:409});
+});
+
 });
