@@ -404,11 +404,11 @@ describe('stock against a real local MongoDB replica set', () => {
     const initialStock=await getStockMovementModel().countDocuments({companyId:fixture.companyId});
     const sale=await getSaleModel().create({companyId:fixture.companyId,branchId:fixture.branchId,customerId:'customer',productId:fixture.productId,quantity:1,unitPrice:2,total:2,status:'PENDIENTE'});
     const order=await getPurchaseOrderModel().create({companyId:fixture.companyId,branchId:fixture.branchId,supplierId:'supplier',productId:fixture.productId,quantity:1,unitCost:2,total:2,status:'PENDIENTE'});
-    const changes=[{model:getSaleModel(),id:String(sale._id),run:()=>updateAuditedSaleStatus(String(sale._id),fixture.companyId,fixture.branchId,'PENDIENTE','CANCELADA',{userId:fixture.userId})},{model:getPurchaseOrderModel(),id:String(order._id),run:()=>updateAuditedPurchaseOrderStatus(String(order._id),fixture.companyId,fixture.branchId,'PENDIENTE','APROBADA',{userId:fixture.userId})}];
+    const changes=[{readStatus:async()=>(await getSaleModel().findById(sale._id))?.status,id:String(sale._id),run:()=>updateAuditedSaleStatus(String(sale._id),fixture.companyId,fixture.branchId,'PENDIENTE','CANCELADA',{userId:fixture.userId})},{readStatus:async()=>(await getPurchaseOrderModel().findById(order._id))?.status,id:String(order._id),run:()=>updateAuditedPurchaseOrderStatus(String(order._id),fixture.companyId,fixture.branchId,'PENDIENTE','APROBADA',{userId:fixture.userId})}];
     for(const change of changes){
       const spy=vi.spyOn(getAuditEventModel(),'create').mockRejectedValueOnce(new Error('Status audit failure'));
       try{await expect(change.run()).rejects.toThrow('Status audit failure');}finally{spy.mockRestore();}
-      expect((await change.model.findById(change.id))?.status).toBe('PENDIENTE');
+      expect(await change.readStatus()).toBe('PENDIENTE');
       const results=await Promise.allSettled([change.run(),change.run()]);expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(results.find(r=>r.status==='rejected')).toMatchObject({reason:{statusCode:409}});
       expect(await getAuditEventModel().countDocuments({companyId:fixture.companyId,entityId:change.id,action:'UPDATE'})).toBe(1);
     }

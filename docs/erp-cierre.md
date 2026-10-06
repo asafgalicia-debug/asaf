@@ -2,6 +2,10 @@
 
 Estado al 5 de octubre de 2026. La existencia de una API o de pruebas aprobadas no equivale a un módulo completo ni a una revisión de uso real.
 
+## Dictamen de revisión final del alcance actual
+
+La referencia vigente es [revision-final-erp-20261006.md](revision-final-erp-20261006.md). El usuario indicó que solicitará futuros módulos/ampliaciones cuando los necesite. El cierre actual se limita a las funciones implementadas: revisión técnica automatizada aprobada, aceptación visual autenticada y actualización web/APK pendientes. PDF y Excel son informes opcionales. Las secciones de avances siguientes son historia; no usar sus listas antiguas para inferir el estado actual.
+
 ## Estado vigente: 6 de octubre de 2026
 
 La actualización 95c4aee ya se publicó en Render. API y web confirman la versión del 6 de octubre; la APK 1.0.1 se instaló y abrió en el emulador Pixel 7, mostrando API conectada. Las notas inferiores de cambios sin publicar son antecedentes de esa publicación. El registro de entrega está en `output/revision-publicacion-20261006.md`.
@@ -39,7 +43,7 @@ Siguen pendientes la revisión visual autenticada, archivos reales en teléfono,
 
 - Completar la cobertura de pantallas y operaciones de los módulos adicionales del router. CRM, logística, mantenimiento, calidad y activos, entre otros, todavía no cuentan con cierre funcional verificado en ambas aplicaciones.
 - Revisar administración de roles, empresas/sucursales y configuración para documentar la cobertura real de API y pantallas.
-- Producción avanzada: consumo automático de materias primas, costos y finalización parcial no están implementados en el flujo actual.
+- Producción: consumo de insumos, entregas parciales y costos manuales por entrega están implementados localmente. Valoración automática y contabilidad quedan como ampliaciones futuras.
 - Facturación fiscal: faltan proveedor, configuración y validación de la integración. Los borradores actuales no sustituyen esa emisión.
 - Integraciones, IA y entrega de notificaciones email/push no están implementadas de extremo a extremo. La verificación de correo con Resend confirmada por el usuario es un flujo independiente.
 - La problemática del documento queda fuera de este trabajo por instrucción del usuario.

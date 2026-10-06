@@ -3,7 +3,7 @@ import { getWarehouseModel } from '../inventario/models/Warehouse.js';
 import { z } from 'zod';
 import { AppError } from '../../errors/AppError.js';
 import { catalogSlice, catalogFilter } from '../../core/catalogPagination.js';
-import { getProductionOrderModel } from './models/ProductionOrder.js';
+import { getProductionOrderModel, type ProductionOrderDocument } from './models/ProductionOrder.js';
 import { getProductModel } from '../productos/models/Product.js';
 import { getAuditEventModel } from '../auditoria/models/AuditEvent.js';
 import { getStockMovementModel } from '../inventario/models/StockMovement.js';
@@ -42,7 +42,7 @@ export async function administerProduction(scope: Scope, operation: 'create' | '
   if (!scope.userId || !parsed.success || (operation !== 'create' && !id.safeParse(orderId).success)) throw invalid();
   await Promise.all([getProductionOrderModel().init(), getAuditEventModel().init(), getStockMovementModel().init(), getStockLockModel().init()]);
   const session = await mongoose.startSession();
-  let result;
+  let result: ProductionOrderDocument & { id: string } | undefined;
   try {
     await session.withTransaction(async () => {
       let row;
