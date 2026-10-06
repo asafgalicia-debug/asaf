@@ -14,7 +14,6 @@ import {ProjectsPanel} from './ProjectsPanel';
 import {UsersPanel} from './UsersPanel';
 import {DepartmentsPanel} from './DepartmentsPanel';
 import {NotificationsPanel} from './NotificationsPanel';
-import {DemoCompanyPanel} from './DemoCompanyPanel';
 import {EmployeePanel} from './EmployeePanel';
 import {AuditPanel} from './AuditPanel';
 import {InventoryAlerts} from './InventoryAlerts';
@@ -241,7 +240,6 @@ function loadTheme(): Theme {
 }
 
 function App() {
-  const [demoVisible,setDemoVisible]=useState(false);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [session, setSession] = useState<{ token: string; user: SessionUser } | null>(null);
   const [page, setPage] = useState<Page>('dashboard');
@@ -269,7 +267,7 @@ function App() {
       fetch(`${apiBaseUrl}/companies`, { headers, signal: controller.signal }).then((response) => response.ok ? response.json() : null),
       fetch(`${apiBaseUrl}/branches`, { headers, signal: controller.signal }).then((response) => response.ok ? response.json() : null)
     ]).then(([companyResult, branchResult]) => {
-      const company = companyResult?.data?.[0];
+      const company = Array.isArray(companyResult?.data) ? companyResult.data.find((item: { id?: string }) => item.id === session.user.companyId) : undefined;
       const branch = Array.isArray(branchResult?.data) ? branchResult.data.find((item: { id?: string }) => item.id === session.user.branchId) : undefined;
       setTenantLabels({ company: company?.name, branch: branch?.name });
     }).catch(() => undefined);
@@ -282,9 +280,12 @@ function App() {
     event.preventDefault();
     setError('');
     setIsSubmitting(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 60000);
     try {
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: 'POST',
+        signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
@@ -295,8 +296,9 @@ function App() {
       setSession({ token: result.data.token, user: result.data.user });
       setPassword('');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'No se pudo conectar con el servidor.');
+      setError(controller.signal.aborted ? 'El servidor tardó demasiado en responder. Intenta iniciar sesión de nuevo.' : cause instanceof Error ? cause.message : 'No se pudo conectar con el servidor.');
     } finally {
+      window.clearTimeout(timeout);
       setIsSubmitting(false);
     }
   }
@@ -307,7 +309,7 @@ function App() {
   return (
     <div className="app-shell" data-mode={theme.mode} style={themeStyle}>
       <style>{styles}</style>
-      {demoVisible ? <DemoCompanyPanel onClose={()=>setDemoVisible(false)}/> : !session ? (
+      {!session ? (
         <main className="auth-layout">
           <section className="auth-visual">
             <div className="brand-lockup"><span className="brand-emblem">N</span><span>{'NUCLEO ERP SOFTWARE'}</span></div>
@@ -331,7 +333,6 @@ function App() {
                 {error && <div className="error-box" role="alert">{error}</div>}
                 <button className="primary-button login-submit" type="submit" disabled={isSubmitting}>{isSubmitting ? 'Validando acceso...' : 'Entrar al ERP'} <span aria-hidden="true">→</span></button>
               </form>
-              <button type="button" onClick={()=>setDemoVisible(true)}>Abrir empresa de demostración · 2,000 productos</button>
               <p className="security-note">La sesion se mantiene en memoria durante esta visita. Tus credenciales se validan con la API y no se guardan en este navegador.</p>
             </div>
           </section>
@@ -345,7 +346,7 @@ function App() {
             <nav className="nav-list" aria-label="Modulos principales">
               {moduleItems.filter(item=>(item.id!=='shipments'||session.user.permissions.includes('logistica.ver'))&&(item.id!=='crm'||session.user.permissions.includes('crm.ver'))&&(item.id!=='production'||session.user.permissions.includes('produccion.ver'))&&(item.id!=='projects'||session.user.permissions.includes('proyectos.ver'))&&(!['departments','users','invoices','maintenance','quality','assets','tickets','risks','compliance','roles','organization'].includes(item.id)||session.user.permissions.includes('usuarios.ver'))&&(item.id!=='notifications'||session.user.permissions.includes('notificaciones.ver'))&&(item.id!=='audit'||session.user.permissions.includes('auditoria.ver'))&&(item.id!=='employees'||session.user.permissions.includes('rrhh.ver'))).map((item) => <button key={item.id} type="button" className={'nav-item' + (page === item.id ? ' active' : '')} onClick={() => { setPage(item.id); setMobileNavOpen(false); }}><span className="nav-icon" aria-hidden="true">{item.icon}</span><span>{item.label}</span></button>)}
             </nav>
-            <div className="sidebar-bottom"><button type="button" className="nav-item" onClick={()=>setDemoVisible(true)}>Empresa de demostración · 2,000 productos</button>
+            <div className="sidebar-bottom">
               <button className="nav-item" type="button" onClick={() => setSettingsOpen(true)}><span className="nav-icon" aria-hidden="true">⚙</span><span>Ajustes visuales</span></button>
               <button className="nav-item" type="button" onClick={() => { setSession(null); setPage('dashboard'); }}><span className="nav-icon" aria-hidden="true">↪</span><span>Cerrar sesion</span></button>
             </div>

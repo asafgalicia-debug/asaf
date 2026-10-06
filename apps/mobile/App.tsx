@@ -14,7 +14,6 @@ import {ProjectsPanel} from './src/ProjectsPanel';
 import {UsersPanel} from './src/UsersPanel';
 import {DepartmentsPanel} from './src/DepartmentsPanel';
 import {NotificationsPanel} from './src/NotificationsPanel';
-import { DemoCompanyPanel } from './src/DemoCompanyPanel';
 import {EmployeePanel} from './src/EmployeePanel';
 import {AuditPanel} from './src/AuditPanel';
 import {InventoryAlerts} from './src/InventoryAlerts';
@@ -71,7 +70,6 @@ function App() {
   const [panelY, setPanelY] = useState(0);
   const [accent, setAccent] = useState(palettes[0].value);
   const [fontFamily, setFontFamily] = useState(typefaces[0].value);
-  const [demoVisible, setDemoVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [activeTab, setActiveTab] = useState('Inicio');
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>('checking');
@@ -108,7 +106,6 @@ function App() {
     }
   };
 
-  if (demoVisible) return <View style={styles.screen}><StatusBar style="light"/><ScrollView ref={scroll} contentContainerStyle={[styles.content, {paddingTop: NativeStatusBar.currentHeight ?? 24}]} keyboardShouldPersistTaps="handled"><DemoCompanyPanel onPageChange={() => scroll.current?.scrollTo({y:0,animated:true})} accent={accent} onClose={() => setDemoVisible(false)}/></ScrollView></View>;
 
   return (
     <View style={styles.screen}>
@@ -161,7 +158,6 @@ function App() {
           </>}
         </View>
 
-        <Pressable accessibilityRole="button" onPress={() => setDemoVisible(true)} style={styles.catalogLink}><Text style={{ color: accent }}>Abrir empresa de demostración · 2,000 productos</Text></Pressable>
 
         <View onLayout={(event) => setPanelY(event.nativeEvent.layout.y)}>
         {session && activeTab === 'Perfil' ? <ProfilePanel base={apiBaseUrl} session={session} accent={accent} onExpired={onExpired} /> : null}
