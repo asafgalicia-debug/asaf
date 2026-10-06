@@ -45,16 +45,18 @@ También se reorganiza el estado vigente de cierre para evitar que notas histór
 
 ## Publicado e instalado actualmente
 
-La API responde `ok=true`, `status=ready`; `/health/version` informa release `2026.10.06` y móvil `1.0.1`. La web sirve `index-CW4xKrjQ.js`, correspondiente a la publicación 95c4aee. La APK instalada en el emulador tiene versionName 1.0.1 y versionCode 2. Los cambios posteriores de roles, organización, riesgos y producción siguen locales.
+La API y la web publicaron el commit 5c8a276 con release `2026.10.06.2`. La APK 1.0.2 se compiló, verificó e instaló en el emulador con conexión a la API. El registro de entrega está en `output/revision-publicacion-1.0.2-20261006.md`.
 
-ADB únicamente detectó el emulador en esta revisión; no se confirmó un teléfono físico conectado. No se generó ni instaló una APK nueva durante esta revisión.
+Después se publicó el commit 37ba85d: retiro de los accesos de demostración, espera acotada de login web y selección de etiqueta de empresa según sesión. La web publicada ya confirma estos cambios. PDF/Excel son informes opcionales. La siguiente APK, 1.0.3, incorpora el retiro de demostración.
+
+ADB únicamente detectó el emulador; no se confirmó un teléfono físico conectado. Falta revisar los módulos visualmente con una sesión autenticada.
 
 ## Pendientes para aceptar y entregar esta versión
 
 1. Revisar interfaces autenticadas con roles de consulta y gestión: navegación, guardar/cancelar, sesión expirada, búsquedas y páginas.
 2. Revisar los flujos críticos en interfaz: venta/cobro, compra/pago, transferencias, producción parcial, administración de acceso y auditoría. La reversión, concurrencia y aislamiento están cubiertos automáticamente; falta evidencia visual de uso real.
 3. Generar la APK nueva, verificar versión, firma y conexión a la API; instalar y probar en teléfono. Verificar guardado/compartir de informes opcionales cuando se utilicen.
-4. Publicar el mismo cambio de API/web en Render y verificar versión y rutas protegidas después del despliegue.
-5. Entregar enlaces y APK únicamente identificando su versión real. No presentar la APK 1.0.1 anterior como si contuviera los avances locales nuevos.
+4. Publicación API/web en Render verificada; comprobar las interfaces con una sesión real.
+5. Entregar la APK identificando su versión real y completar la aceptación en teléfono físico.
 
 La emisión fiscal, nuevos conectores y otros módulos no se ejecutan sin una solicitud concreta y su configuración. Si se necesita emisión fiscal para esta entrega, debe definirse ese alcance antes de darla por aceptada; los borradores actuales siguen identificados como administrativos.
